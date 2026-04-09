@@ -77,6 +77,8 @@ uvicorn app.main:app --reload
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/status/current`
 - `http://127.0.0.1:8000/status/readings`
+- `http://127.0.0.1:8000/status/catalog`
+- `http://127.0.0.1:8000/status/trend?signal=pv_pres_sistema_bar&limit=120`
 - `http://127.0.0.1:8000/status/scores`
 - `http://127.0.0.1:8000/alerts`
 
@@ -149,6 +151,14 @@ Ela consome os endpoints existentes e mostra:
 - score de risco por subsistema
 - alertas ativos
 - indicadores-chave do compressor
+- filtros por subsistema, severidade e busca textual
+- navegação clicavel por sinais
+- grafico temporal com meta, limites, media de 15 min e EWMA
+
+## Endpoints analiticos do dashboard
+
+- `GET /status/catalog`: lista os sinais disponiveis para filtros, com unidade, subsistema e limites
+- `GET /status/trend?signal=<nome>&limit=<pontos>`: retorna serie temporal analitica do sinal, com meta, regras e resumo estatistico
 
 ## Evolucao para IA explicativa
 

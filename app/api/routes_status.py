@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.domain.schemas import (
     ReadingsResponse,
     RiskScoresResponse,
+    SignalCatalogResponse,
+    SignalTrendResponse,
     SnapshotResponse,
     StatusResponse,
 )
@@ -39,6 +41,22 @@ def get_risk_scores(
     service: HealthService = Depends(get_health_service),
 ) -> RiskScoresResponse:
     return service.get_risk_scores()
+
+
+@router.get("/catalog", response_model=SignalCatalogResponse)
+def get_signal_catalog(
+    service: HealthService = Depends(get_health_service),
+) -> SignalCatalogResponse:
+    return service.get_signal_catalog()
+
+
+@router.get("/trend", response_model=SignalTrendResponse)
+def get_signal_trend(
+    signal: str = Query(..., min_length=3),
+    limit: int = Query(default=120, ge=30, le=500),
+    service: HealthService = Depends(get_health_service),
+) -> SignalTrendResponse:
+    return service.get_signal_trend(signal=signal, limit=limit)
 
 
 @router.get("", response_model=StatusResponse)

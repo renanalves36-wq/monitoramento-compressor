@@ -8,12 +8,25 @@ from typing import Any
 import pandas as pd
 
 from app.config import Settings
+from app.domain.mappings import (
+    DEFAULT_SIGNAL_BY_SUBSYSTEM,
+    SUBSYSTEM_SIGNALS,
+    TARGET_SIGNAL_BY_SIGNAL,
+    get_signal_label,
+    get_signal_unit,
+)
 from app.domain.schemas import (
     AlertsResponse,
     ReadingsResponse,
     RiskScoresResponse,
+    SignalCatalogItem,
+    SignalCatalogResponse,
+    SignalTrendResponse,
     SnapshotResponse,
     StatusResponse,
+    TrendPoint,
+    TrendRuleSummary,
+    TrendSummary,
 )
 from app.services.alert_service import AlertService
 from app.services.feature_service import FeatureService
@@ -157,6 +170,135 @@ class HealthService:
         self.refresh()
         return RiskScoresResponse(generated_at=utc_now(), scores=self._risk_scores)
 
+    def get_signal_catalog(self) -> SignalCatalogResponse:
+        self.refresh()
+        active_alerts = self.repository.list_alerts(active_only=True)
+        alert_count_by_signal: dict[str, int] = {}
+        for alert in active_alerts:
+            if alert.signal:
+                alert_count_by_signal[alert.signal] = alert_count_by_signal.get(alert.signal, 0) + 1
+
+        available_columns = set(self._history_frame.columns) | set(self._feature_frame.columns)
+        signals: list[SignalCatalogItem] = []
+        for subsystem, subsystem_signals in SUBSYSTEM_SIGNALS.items():
+            for signal in subsystem_signals:
+                if signal not in available_columns:
+                    continue
+                if signal in self._feature_frame.columns and not pd.api.types.is_numeric_dtype(
+                    self._feature_frame[signal]
+                ):
+                    continue
+                lower_limit, upper_limit, target_value, rules = self._get_signal_limits_and_rules(signal)
+                default_target_signal = TARGET_SIGNAL_BY_SIGNAL.get(signal)
+                signals.append(
+                    SignalCatalogItem(
+                        signal=signal,
+                        label=get_signal_label(signal),
+                        subsystem=subsystem,
+                        unit=get_signal_unit(signal),
+                        default_target_signal=default_target_signal,
+                        default_target_label=(
+                            get_signal_label(default_target_signal)
+                            if default_target_signal
+                            else None
+                        ),
+                        lower_limit=lower_limit,
+                        upper_limit=upper_limit,
+                        target_value=target_value,
+                        active_alerts=alert_count_by_signal.get(signal, 0),
+                    )
+                )
+
+        default_signal = None
+        for subsystem in ("ar_processo", "lubrificacao", "vibracao", "motor", "operacao"):
+            candidate = DEFAULT_SIGNAL_BY_SUBSYSTEM.get(subsystem)
+            if candidate and any(item.signal == candidate for item in signals):
+                default_signal = candidate
+                break
+        if default_signal is None and signals:
+            default_signal = signals[0].signal
+
+        return SignalCatalogResponse(
+            default_signal=default_signal,
+            default_window=min(120, max(30, len(self._feature_frame) or 120)),
+            subsystems=list(SUBSYSTEM_SIGNALS.keys()),
+            severities=["all", "low", "medium", "high", "critical"],
+            signals=signals,
+        )
+
+    def get_signal_trend(self, signal: str, limit: int = 120) -> SignalTrendResponse:
+        self.refresh()
+        if (
+            self._feature_frame.empty
+            or signal not in self._feature_frame.columns
+            or not pd.api.types.is_numeric_dtype(self._feature_frame[signal])
+        ):
+            return SignalTrendResponse(
+                signal=signal,
+                label=get_signal_label(signal),
+                subsystem=self._infer_subsystem(signal),
+                unit=get_signal_unit(signal),
+            )
+
+        trend_frame = (
+            self._feature_frame.sort_values("timestamp")
+            .tail(limit)
+            .reset_index(drop=True)
+        )
+
+        lower_limit, upper_limit, target_value, rules = self._get_signal_limits_and_rules(signal)
+        target_signal = TARGET_SIGNAL_BY_SIGNAL.get(signal)
+        target_label = get_signal_label(target_signal) if target_signal else None
+
+        points: list[TrendPoint] = []
+        for _, row in trend_frame.iterrows():
+            row_target_value = target_value
+            if target_signal and target_signal in trend_frame.columns:
+                row_target_value = self._safe_float(row.get(target_signal))
+
+            points.append(
+                TrendPoint(
+                    timestamp=pd.to_datetime(row["timestamp"]).to_pydatetime(),
+                    value=self._safe_float(row.get(signal)),
+                    target_value=row_target_value,
+                    rolling_mean=self._safe_float(row.get(f"{signal}__ma_15m")),
+                    ewma=self._safe_float(row.get(f"{signal}__ewma")),
+                    lower_limit=lower_limit,
+                    upper_limit=upper_limit,
+                )
+            )
+
+        latest_row = trend_frame.iloc[-1]
+        previous_row = trend_frame.iloc[-2] if len(trend_frame) >= 2 else latest_row
+        summary = TrendSummary(
+            latest=self._safe_float(latest_row.get(signal)),
+            previous=self._safe_float(previous_row.get(signal)),
+            mean=self._safe_float(trend_frame[signal].mean()),
+            minimum=self._safe_float(trend_frame[signal].min()),
+            maximum=self._safe_float(trend_frame[signal].max()),
+            delta=self._safe_float(latest_row.get(signal) - previous_row.get(signal)),
+            slope_15m=self._safe_float(latest_row.get(f"{signal}__slope_15m")),
+            slope_1h=self._safe_float(latest_row.get(f"{signal}__slope_1h")),
+            zscore_1h=self._safe_float(latest_row.get(f"{signal}__zscore_1h")),
+            std_1h=self._safe_float(latest_row.get(f"{signal}__std_1h")),
+        )
+
+        return SignalTrendResponse(
+            signal=signal,
+            label=get_signal_label(signal),
+            subsystem=self._infer_subsystem(signal),
+            unit=get_signal_unit(signal),
+            count=len(points),
+            target_signal=target_signal,
+            target_label=target_label,
+            target_value=target_value,
+            lower_limit=lower_limit,
+            upper_limit=upper_limit,
+            summary=summary,
+            points=points,
+            rules=rules,
+        )
+
     def get_service_status(self) -> StatusResponse:
         self.refresh()
         latest_ts = None
@@ -170,6 +312,90 @@ class HealthService:
             active_alerts=len(self.repository.list_alerts(active_only=True)),
             last_refresh_at=self._last_refresh_at,
         )
+
+    def _get_signal_limits_and_rules(
+        self, signal: str
+    ) -> tuple[float | None, float | None, float | None, list[TrendRuleSummary]]:
+        lower_limit: float | None = None
+        upper_limit: float | None = None
+        target_value: float | None = None
+        rules: list[TrendRuleSummary] = []
+
+        for rule in self.alert_service.rules.get("fixed_rules", []):
+            if rule.get("signal") != signal:
+                continue
+
+            condition = rule.get("condition")
+            threshold_text = None
+            if condition == "between":
+                min_value = float(rule["min_value"])
+                max_value = float(rule["max_value"])
+                lower_limit = min_value if lower_limit is None else max(lower_limit, min_value)
+                upper_limit = max_value if upper_limit is None else min(upper_limit, max_value)
+                threshold_text = f"{min_value}..{max_value}"
+            elif condition in {"gt", "gte"}:
+                candidate = float(rule["threshold"])
+                upper_limit = candidate if upper_limit is None else min(upper_limit, candidate)
+                threshold_text = f"{condition} {candidate}"
+            elif condition in {"lt", "lte"}:
+                candidate = float(rule["threshold"])
+                lower_limit = candidate if lower_limit is None else max(lower_limit, candidate)
+                threshold_text = f"{condition} {candidate}"
+
+            rules.append(
+                TrendRuleSummary(
+                    rule_id=rule["rule_id"],
+                    title=rule["title"],
+                    severity=rule["severity"],
+                    layer="fixed_rule",
+                    condition=condition,
+                    threshold=threshold_text,
+                )
+            )
+
+        for rule in self.alert_service.rules.get("trend_rules", []):
+            if rule.get("signal") != signal:
+                continue
+            rules.append(
+                TrendRuleSummary(
+                    rule_id=rule["rule_id"],
+                    title=rule["title"],
+                    severity=rule["severity"],
+                    layer="trend",
+                    condition=rule.get("condition"),
+                    threshold=(
+                        None
+                        if "threshold" not in rule
+                        else f"{rule.get('condition')} {rule.get('threshold')}"
+                    ),
+                )
+            )
+
+        if signal not in TARGET_SIGNAL_BY_SIGNAL:
+            if lower_limit is not None and upper_limit is not None:
+                target_value = round((lower_limit + upper_limit) / 2.0, 3)
+            elif upper_limit is not None:
+                target_value = upper_limit
+            elif lower_limit is not None:
+                target_value = lower_limit
+
+        return lower_limit, upper_limit, target_value, rules
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _infer_subsystem(signal: str) -> str:
+        for subsystem, signals in SUBSYSTEM_SIGNALS.items():
+            if signal in signals:
+                return subsystem
+        return "operacao"
 
     @staticmethod
     def _serialize_row(row: pd.Series, include_features: bool = False) -> dict[str, Any]:

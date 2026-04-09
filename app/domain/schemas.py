@@ -66,6 +66,75 @@ class RiskScoresResponse(BaseModel):
     scores: list[SubsystemRiskScore]
 
 
+class SignalCatalogItem(BaseModel):
+    signal: str
+    label: str
+    subsystem: str
+    unit: str | None = None
+    default_target_signal: str | None = None
+    default_target_label: str | None = None
+    lower_limit: float | None = None
+    upper_limit: float | None = None
+    target_value: float | None = None
+    active_alerts: int = 0
+
+
+class SignalCatalogResponse(BaseModel):
+    default_signal: str | None = None
+    default_window: int = 120
+    subsystems: list[str] = Field(default_factory=list)
+    severities: list[str] = Field(default_factory=list)
+    signals: list[SignalCatalogItem] = Field(default_factory=list)
+
+
+class TrendRuleSummary(BaseModel):
+    rule_id: str
+    title: str
+    severity: str
+    layer: str
+    condition: str | None = None
+    threshold: str | None = None
+
+
+class TrendPoint(BaseModel):
+    timestamp: datetime
+    value: float | None = None
+    target_value: float | None = None
+    rolling_mean: float | None = None
+    ewma: float | None = None
+    lower_limit: float | None = None
+    upper_limit: float | None = None
+
+
+class TrendSummary(BaseModel):
+    latest: float | None = None
+    previous: float | None = None
+    mean: float | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+    delta: float | None = None
+    slope_15m: float | None = None
+    slope_1h: float | None = None
+    zscore_1h: float | None = None
+    std_1h: float | None = None
+
+
+class SignalTrendResponse(BaseModel):
+    signal: str
+    label: str
+    subsystem: str
+    unit: str | None = None
+    count: int = 0
+    target_signal: str | None = None
+    target_label: str | None = None
+    target_value: float | None = None
+    lower_limit: float | None = None
+    upper_limit: float | None = None
+    summary: TrendSummary = Field(default_factory=TrendSummary)
+    points: list[TrendPoint] = Field(default_factory=list)
+    rules: list[TrendRuleSummary] = Field(default_factory=list)
+
+
 class StatusResponse(BaseModel):
     service_status: str
     data_source: str | None = None

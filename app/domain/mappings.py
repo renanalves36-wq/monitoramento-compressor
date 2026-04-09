@@ -145,3 +145,99 @@ NORMAL_OPERATION = {
     "st_oper": "EM FUNCIONAMENTO",
     "st_carga_oper": "CARREGADO",
 }
+
+SIGNAL_METADATA = {
+    "sp_pres_sistema_bar": {"label": "Setpoint de pressao do sistema", "unit": "bar"},
+    "pv_pres_sistema_bar": {"label": "Pressao do sistema", "unit": "bar"},
+    "sp_pres_setpoint_descarga_bar": {
+        "label": "Setpoint de pressao de descarga",
+        "unit": "bar",
+    },
+    "pv_pres_descarga_bar": {"label": "Pressao de descarga", "unit": "bar"},
+    "pv_pres_oleo_antes_filtro_bar": {
+        "label": "Pressao de oleo antes do filtro",
+        "unit": "bar",
+    },
+    "pv_pres_oleo_bar": {"label": "Pressao de oleo", "unit": "bar"},
+    "pv_temp_oleo_lubrificacao_c": {
+        "label": "Temperatura do oleo",
+        "unit": "C",
+    },
+    "pv_vib_estagio_1_mils": {"label": "Vibracao 1o estagio", "unit": "mils"},
+    "pv_vib_estagio_2_mils": {"label": "Vibracao 2o estagio", "unit": "mils"},
+    "pv_vib_estagio_3_mils": {"label": "Vibracao 3o estagio", "unit": "mils"},
+    "pv_vib_max_mils": {"label": "Vibracao maxima", "unit": "mils"},
+    "pv_temp_ar_estagio_3_c": {
+        "label": "Temperatura do ar do 3o estagio",
+        "unit": "C",
+    },
+    "pv_niv_interruptor_oleo_bar": {
+        "label": "Nivel do interruptor de oleo",
+        "unit": "estado",
+    },
+    "pv_pres_vacuo_cx_engran_inh2o": {
+        "label": "Vacuo da caixa de engrenagem",
+        "unit": "inH2O",
+    },
+    "pv_temp_fase_a_do_estator_c": {
+        "label": "Temperatura do estator fase A",
+        "unit": "C",
+    },
+    "pv_temp_fase_b_do_estator_c": {
+        "label": "Temperatura do estator fase B",
+        "unit": "C",
+    },
+    "pv_temp_fase_c_do_estator_c": {
+        "label": "Temperatura do estator fase C",
+        "unit": "C",
+    },
+    "pv_temp_estator_max_c": {"label": "Temperatura maxima do estator", "unit": "C"},
+    "pv_temp_rolamento_dianteiro_motor": {
+        "label": "Temperatura do rolamento dianteiro",
+        "unit": "C",
+    },
+    "pv_corr_motor_a": {"label": "Corrente do motor", "unit": "A"},
+    "pv_pos_abert_valv_admissao_pct": {
+        "label": "Abertura da valvula de admissao",
+        "unit": "%",
+    },
+    "pv_pos_valv_bypass_pct": {"label": "Posicao da valvula de bypass", "unit": "%"},
+    "pv_pos_alivio_pct": {"label": "Posicao de alivio", "unit": "%"},
+    "st_plc": {"label": "Status PLC", "unit": None},
+    "st_oper": {"label": "Estado operacional", "unit": None},
+    "pv_hor_operacao": {"label": "Horas de operacao", "unit": "h"},
+    "pv_hor_carregada": {"label": "Horas carregadas", "unit": "h"},
+    "pv_num_partidas": {"label": "Numero de partidas", "unit": "contagem"},
+    "st_carga_oper": {"label": "Estado de carga", "unit": None},
+    "delta_filtro_oleo_bar": {
+        "label": "Diferencial do filtro de oleo",
+        "unit": "bar",
+    },
+    "status": {"label": "Status geral", "unit": None},
+}
+
+TARGET_SIGNAL_BY_SIGNAL = {
+    "pv_pres_sistema_bar": "sp_pres_sistema_bar",
+    "pv_pres_descarga_bar": "sp_pres_setpoint_descarga_bar",
+}
+
+DEFAULT_SIGNAL_BY_SUBSYSTEM = {
+    "ar_processo": "pv_pres_sistema_bar",
+    "lubrificacao": "pv_temp_oleo_lubrificacao_c",
+    "vibracao": "pv_vib_max_mils",
+    "motor": "pv_corr_motor_a",
+    "operacao": "pv_hor_operacao",
+}
+
+
+def get_signal_label(signal: str) -> str:
+    metadata = SIGNAL_METADATA.get(signal, {})
+    if metadata.get("label"):
+        return str(metadata["label"])
+    return signal.replace("_", " ")
+
+
+def get_signal_unit(signal: str) -> str | None:
+    metadata = SIGNAL_METADATA.get(signal, {})
+    unit = metadata.get("unit")
+    return None if unit is None else str(unit)
