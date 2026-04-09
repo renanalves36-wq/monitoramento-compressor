@@ -39,6 +39,7 @@ class HealthService:
         self._quality_issues = []
         self._risk_scores = self.alert_service._empty_scores()
         self._last_refresh_at: datetime | None = None
+        self._data_source = "unknown"
 
     def refresh(self, force: bool = False) -> None:
         if not force and self._last_refresh_at:
@@ -54,14 +55,17 @@ class HealthService:
     def _run_cycle(self) -> None:
         batch = self._load_batch()
         if batch.frame.empty and self._history_frame.empty:
+            self._data_source = batch.source
             self._last_refresh_at = utc_now()
             return
 
         if not batch.frame.empty:
             self._history_frame = self._merge_history(batch.frame)
             self._quality_issues = batch.quality_issues
+            self._data_source = batch.source
 
         if self._history_frame.empty:
+            self._data_source = batch.source
             self._last_refresh_at = utc_now()
             return
 
@@ -80,6 +84,7 @@ class HealthService:
                 "history_rows": int(len(self._history_frame)),
                 "active_alerts": int(len(active_alerts)),
                 "quality_issues": int(len(self._quality_issues)),
+                "data_source": self._data_source,
             },
         )
 
@@ -160,6 +165,7 @@ class HealthService:
 
         return StatusResponse(
             service_status="ok" if latest_ts else "waiting_for_data",
+            data_source=self._data_source,
             latest_timestamp=latest_ts,
             active_alerts=len(self.repository.list_alerts(active_only=True)),
             last_refresh_at=self._last_refresh_at,

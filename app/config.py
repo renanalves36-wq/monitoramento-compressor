@@ -21,6 +21,7 @@ class Settings(BaseModel):
     app_name: str = Field(default=os.getenv("APP_NAME", "ta6000-monitor"))
     environment: str = Field(default=os.getenv("ENVIRONMENT", "local"))
     log_level: str = Field(default=os.getenv("LOG_LEVEL", "INFO").upper())
+    data_source_mode: str = Field(default=os.getenv("DATA_SOURCE_MODE", "auto").lower())
 
     sql_server: str = Field(default=os.getenv("SQL_SERVER", "srv01win185"))
     sql_port: int = Field(default=int(os.getenv("SQL_PORT", "1433")))
@@ -42,6 +43,9 @@ class Settings(BaseModel):
     api_readings_limit: int = Field(default=int(os.getenv("API_READINGS_LIMIT", "50")))
     alert_rules_path: Path = Field(
         default=BASE_DIR / os.getenv("ALERT_RULES_PATH", "config/alert_rules.json")
+    )
+    demo_csv_path: Path = Field(
+        default=BASE_DIR / os.getenv("DEMO_CSV_PATH", "data/demo_ta6000.csv")
     )
     sqlite_path: Path = Field(
         default=BASE_DIR / os.getenv("SQLITE_PATH", "data/alerts.db")

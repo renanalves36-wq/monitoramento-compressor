@@ -68,6 +68,7 @@ class RiskScoresResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     service_status: str
+    data_source: str | None = None
     latest_timestamp: datetime | None = None
     active_alerts: int = 0
     last_refresh_at: datetime | None = None

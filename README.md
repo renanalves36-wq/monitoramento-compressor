@@ -5,6 +5,7 @@ Sistema em Python para monitoramento inteligente, alerta antecipado e apoio a pr
 ## O que o projeto entrega
 
 - Leitura incremental por `TimeStamp` usando `mssql-python`
+- Fallback automatico para CSV de demonstracao quando o SQL Server nao estiver acessivel
 - Query SQL com `SELECT` explicito, aliases amigaveis e tratamento de colunas com numero, `%` e acento
 - Limpeza e validacao de dados: nulos, duplicidade temporal, ordenacao, tipos, sensores travados, zeros anormais e faixa plausivel
 - Features estatisticas por modo operacional: medias moveis, desvio padrao, min/max, slope, z-score e EWMA
@@ -78,6 +79,23 @@ uvicorn app.main:app --reload
 - `http://127.0.0.1:8000/status/scores`
 - `http://127.0.0.1:8000/alerts`
 
+## Modos de fonte de dados
+
+O projeto aceita tres modos em `DATA_SOURCE_MODE`:
+
+- `auto`: tenta SQL Server e cai para CSV demo se a conexao falhar
+- `sql`: usa apenas SQL Server
+- `demo_csv`: usa apenas o arquivo CSV local
+
+Para Codespaces ou qualquer ambiente sem acesso a rede interna da empresa, use:
+
+```env
+DATA_SOURCE_MODE=demo_csv
+DEMO_CSV_PATH=data/demo_ta6000.csv
+```
+
+O arquivo de demonstracao ja vem no projeto em [demo_ta6000.csv](/c:/Users/011226939/Documents/Monitoramento%20compressor/data/demo_ta6000.csv).
+
 ## Configuracao do SQL Server
 
 O projeto usa `mssql-python` e nao usa ODBC. A conexao pode ser configurada de duas formas:
@@ -90,6 +108,8 @@ Exemplo de string:
 ```text
 Server=srv01win185,1433;Database=INDUSOFT;User Id=usuario;Password=senha;Encrypt=Optional;TrustServerCertificate=yes
 ```
+
+Se o SQL Server nao puder ser acessado a partir do ambiente atual, a API continua operando em modo de demonstracao com CSV e persistencia de alertas em SQLite.
 
 ## Regras e calibracao
 
@@ -109,6 +129,7 @@ O sinal `pv_pres_vacuo_cx_engran_inh2o` ja nasce com tratamento para possivel di
 ## Endpoints
 
 - `GET /status`: saude do servico e ultima atualizacao
+- `GET /status`: inclui tambem a fonte de dados ativa em `data_source`
 - `GET /status/current`: snapshot mais recente do compressor
 - `GET /status/readings?limit=20`: ultimas leituras em ordem decrescente de tempo
 - `GET /status/scores`: score de risco por subsistema
@@ -140,6 +161,27 @@ Execute com:
 python -m unittest
 ```
 
-## Observacao importante
+## Demo rapida no Codespaces
 
-Neste ambiente eu nao consegui executar `python` localmente porque o interpretador nao esta disponivel no `PATH`, entao a validacao final por compilacao e execucao da API ficou pendente. A estrutura e o codigo foram preparados para rodar assim que o Python 3.11+ estiver acessivel no VS Code ou terminal.
+Se o banco `srv01win185` nao for acessivel a partir do Codespace:
+
+1. Ajuste o `.env`:
+
+```env
+DATA_SOURCE_MODE=demo_csv
+DEMO_CSV_PATH=data/demo_ta6000.csv
+```
+
+2. Suba a API:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+3. Teste:
+
+- `/status`
+- `/status/current`
+- `/status/readings`
+- `/status/scores`
+- `/alerts`

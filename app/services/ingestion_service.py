@@ -27,6 +27,7 @@ from app.utils.logger import get_logger
 class IngestionBatch:
     frame: pd.DataFrame
     quality_issues: list[DataQualityIssue]
+    source: str = "unknown"
 
 
 class IngestionService:
@@ -40,15 +41,54 @@ class IngestionService:
         self, since: datetime, limit: int | None = None
     ) -> IngestionBatch:
         query = build_recent_window_query(since=since, limit=limit)
-        return self._fetch_batch(query=query, parameter=since)
+        return self._fetch(query=query, parameter=since, incremental=False, limit=limit)
 
     def fetch_incremental(
         self, since_timestamp: datetime, limit: int | None = None
     ) -> IngestionBatch:
         query = build_incremental_query(limit=limit)
-        return self._fetch_batch(query=query, parameter=since_timestamp)
+        return self._fetch(
+            query=query,
+            parameter=since_timestamp,
+            incremental=True,
+            limit=limit,
+        )
 
-    def _fetch_batch(self, query: str, parameter: datetime) -> IngestionBatch:
+    def _fetch(
+        self,
+        query: str,
+        parameter: datetime,
+        incremental: bool,
+        limit: int | None,
+    ) -> IngestionBatch:
+        mode = self.settings.data_source_mode
+        if mode == "demo_csv":
+            return self._fetch_demo_batch(
+                parameter=parameter,
+                incremental=incremental,
+                limit=limit,
+            )
+
+        if mode == "sql":
+            return self._fetch_sql_batch(query=query, parameter=parameter)
+
+        try:
+            return self._fetch_sql_batch(query=query, parameter=parameter)
+        except Exception as exc:
+            self.logger.warning(
+                "sql_unavailable_falling_back_to_demo",
+                extra={
+                    "error": str(exc),
+                    "demo_csv_path": str(self.settings.demo_csv_path),
+                },
+            )
+            return self._fetch_demo_batch(
+                parameter=parameter,
+                incremental=incremental,
+                limit=limit,
+            )
+
+    def _fetch_sql_batch(self, query: str, parameter: datetime) -> IngestionBatch:
         with open_connection(self.settings) as connection:
             cursor = connection.cursor()
             cursor.execute(query, (parameter,))
@@ -68,7 +108,45 @@ class IngestionService:
                 "issues_found": len(issues),
             },
         )
-        return IngestionBatch(frame=clean_frame, quality_issues=issues)
+        return IngestionBatch(frame=clean_frame, quality_issues=issues, source="sql")
+
+    def _fetch_demo_batch(
+        self,
+        parameter: datetime,
+        incremental: bool,
+        limit: int | None,
+    ) -> IngestionBatch:
+        demo_path = self.settings.demo_csv_path
+        if not demo_path.exists():
+            raise FileNotFoundError(f"Demo CSV not found: {demo_path}")
+
+        raw_frame = pd.read_csv(demo_path, decimal=",")
+        if "timestamp" not in raw_frame.columns:
+            raise ValueError("Demo CSV must contain a 'timestamp' column.")
+
+        raw_frame["timestamp"] = pd.to_datetime(raw_frame["timestamp"], errors="coerce")
+        if incremental:
+            filtered = raw_frame[raw_frame["timestamp"] > pd.to_datetime(parameter)]
+        else:
+            filtered = raw_frame[raw_frame["timestamp"] >= pd.to_datetime(parameter)]
+            if filtered.empty and not raw_frame.empty:
+                filtered = raw_frame.copy()
+
+        filtered = filtered.sort_values("timestamp")
+        if limit:
+            filtered = filtered.tail(limit)
+
+        clean_frame, issues = self._clean_and_validate(filtered.reset_index(drop=True))
+        self.logger.info(
+            "demo_csv_batch_loaded",
+            extra={
+                "demo_csv_path": str(demo_path),
+                "rows_read": int(len(filtered)),
+                "rows_clean": int(len(clean_frame)),
+                "issues_found": int(len(issues)),
+            },
+        )
+        return IngestionBatch(frame=clean_frame, quality_issues=issues, source="demo_csv")
 
     @staticmethod
     def _row_to_dict(row: Any, columns: list[str]) -> dict[str, Any]:
