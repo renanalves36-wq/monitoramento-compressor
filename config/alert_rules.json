@@ -1,0 +1,281 @@
+{
+  "fixed_rules": [
+    {
+      "rule_id": "rede_pressao_alta",
+      "signal": "pv_pres_sistema_bar",
+      "subsystem": "ar_processo",
+      "condition": "gt",
+      "threshold": 6.9,
+      "severity": "medium",
+      "title": "Pressao de ar comprimido acima do esperado",
+      "message": "A pressao da rede ultrapassou o patamar de referencia operacional.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "pressao_sistema_fora_faixa",
+      "signal": "pv_pres_sistema_bar",
+      "subsystem": "ar_processo",
+      "condition": "between",
+      "min_value": 5.0,
+      "max_value": 7.8,
+      "severity": "high",
+      "title": "Pressao do sistema fora da faixa operacional",
+      "message": "A pressao do sistema saiu da faixa esperada para operacao carregada.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "corrente_motor_alta",
+      "signal": "pv_corr_motor_a",
+      "subsystem": "motor",
+      "condition": "gt",
+      "threshold": 185.0,
+      "severity": "medium",
+      "title": "Corrente do motor acima do esperado",
+      "message": "A corrente do motor excedeu o limite de referencia.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "temperatura_ar_estagio_3_alta",
+      "signal": "pv_temp_ar_estagio_3_c",
+      "subsystem": "ar_processo",
+      "condition": "gt",
+      "threshold": 54.0,
+      "severity": "medium",
+      "title": "Temperatura do ar do 3o estagio alta",
+      "message": "A temperatura do ar no 3o estagio ultrapassou a referencia.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "vibracao_estagio_1_alta",
+      "signal": "pv_vib_estagio_1_mils",
+      "subsystem": "vibracao",
+      "condition": "gt",
+      "threshold": 1.3,
+      "severity": "high",
+      "title": "Vibracao alta no 1o estagio",
+      "message": "A vibracao do 1o estagio passou da faixa segura.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "vibracao_estagio_2_alta",
+      "signal": "pv_vib_estagio_2_mils",
+      "subsystem": "vibracao",
+      "condition": "gt",
+      "threshold": 1.3,
+      "severity": "high",
+      "title": "Vibracao alta no 2o estagio",
+      "message": "A vibracao do 2o estagio passou da faixa segura.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "vibracao_estagio_3_alta",
+      "signal": "pv_vib_estagio_3_mils",
+      "subsystem": "vibracao",
+      "condition": "gt",
+      "threshold": 1.3,
+      "severity": "high",
+      "title": "Vibracao alta no 3o estagio",
+      "message": "A vibracao do 3o estagio passou da faixa segura.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "pressao_oleo_fora_faixa",
+      "signal": "pv_pres_oleo_bar",
+      "subsystem": "lubrificacao",
+      "condition": "between",
+      "min_value": 6.89,
+      "max_value": 12.0,
+      "severity": "high",
+      "title": "Pressao do oleo fora da faixa",
+      "message": "A pressao do oleo saiu da faixa operacional esperada.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "delta_filtro_oleo_alto",
+      "signal": "delta_filtro_oleo_bar",
+      "subsystem": "lubrificacao",
+      "condition": "gt",
+      "threshold": 2.7,
+      "severity": "medium",
+      "title": "Diferencial do filtro de oleo elevado",
+      "message": "O diferencial calculado antes e depois do filtro de oleo aumentou acima do limite.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "temperatura_oleo_fora_faixa",
+      "signal": "pv_temp_oleo_lubrificacao_c",
+      "subsystem": "lubrificacao",
+      "condition": "between",
+      "min_value": 25.0,
+      "max_value": 57.0,
+      "severity": "medium",
+      "title": "Temperatura do oleo fora da faixa",
+      "message": "A temperatura do oleo fugiu da faixa de referencia.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "vacuo_caixa_engr_fora_faixa",
+      "signal": "pv_pres_vacuo_cx_engran_inh2o",
+      "subsystem": "lubrificacao",
+      "condition": "between",
+      "min_value": 8.0,
+      "max_value": 12.0,
+      "severity": "high",
+      "title": "Vacuo da caixa de engrenagem fora da faixa",
+      "message": "Leitura fora da referencia. Validar unidade, escala ou sinal de engenharia antes de concluir falha de processo.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "temp_estator_fase_a_alta",
+      "signal": "pv_temp_fase_a_do_estator_c",
+      "subsystem": "motor",
+      "condition": "gt",
+      "threshold": 166.0,
+      "severity": "high",
+      "title": "Temperatura do estator fase A elevada",
+      "message": "A temperatura da fase A do estator ultrapassou o limite.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "temp_estator_fase_b_alta",
+      "signal": "pv_temp_fase_b_do_estator_c",
+      "subsystem": "motor",
+      "condition": "gt",
+      "threshold": 166.0,
+      "severity": "high",
+      "title": "Temperatura do estator fase B elevada",
+      "message": "A temperatura da fase B do estator ultrapassou o limite.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "temp_estator_fase_c_alta",
+      "signal": "pv_temp_fase_c_do_estator_c",
+      "subsystem": "motor",
+      "condition": "gt",
+      "threshold": 166.0,
+      "severity": "high",
+      "title": "Temperatura do estator fase C elevada",
+      "message": "A temperatura da fase C do estator ultrapassou o limite.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "temp_rolamento_dianteiro_alta",
+      "signal": "pv_temp_rolamento_dianteiro_motor",
+      "subsystem": "motor",
+      "condition": "gt",
+      "threshold": 85.0,
+      "severity": "medium",
+      "title": "Temperatura do rolamento dianteiro elevada",
+      "message": "A temperatura do rolamento dianteiro do motor ultrapassou a referencia.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    }
+  ],
+  "trend_rules": [
+    {
+      "rule_id": "oleo_aquecendo_15m",
+      "signal": "pv_temp_oleo_lubrificacao_c",
+      "subsystem": "lubrificacao",
+      "feature": "slope_15m",
+      "condition": "gt",
+      "threshold": 0.15,
+      "severity": "medium",
+      "title": "Tendencia de aquecimento do oleo",
+      "message": "A temperatura do oleo esta subindo de forma sustentada na janela de 15 minutos.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "vibracao_max_em_alta",
+      "signal": "pv_vib_max_mils",
+      "subsystem": "vibracao",
+      "feature": "zscore_1h",
+      "condition": "gt",
+      "threshold": 2.5,
+      "severity": "medium",
+      "title": "Comportamento de vibracao anormal",
+      "message": "A vibracao maxima fugiu do padrao estatistico da ultima hora.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "corrente_motor_subida_1h",
+      "signal": "pv_corr_motor_a",
+      "subsystem": "motor",
+      "feature": "slope_1h",
+      "condition": "gt",
+      "threshold": 0.05,
+      "severity": "low",
+      "title": "Corrente do motor em tendencia de subida",
+      "message": "A corrente do motor mostra inclinacao positiva persistente na ultima hora.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    },
+    {
+      "rule_id": "pressao_descarga_desvio_ewma",
+      "signal": "pv_pres_descarga_bar",
+      "subsystem": "ar_processo",
+      "feature": "ewma_gap_abs",
+      "condition": "gt",
+      "threshold": 0.6,
+      "severity": "low",
+      "title": "Desvio operacional na pressao de descarga",
+      "message": "A pressao de descarga esta se afastando da referencia suavizada.",
+      "allowed_modes": [
+        "EM FUNCIONAMENTO|CARREGADO"
+      ]
+    }
+  ],
+  "anomaly_rules": [
+    {
+      "rule_id": "temperatura_estagio_3_zerada",
+      "signal": "pv_temp_ar_estagio_3_c",
+      "subsystem": "ar_processo",
+      "type": "zero_abnormal",
+      "severity": "medium",
+      "title": "Temperatura do 3o estagio zerada",
+      "message": "Valor zerado recorrente para uma variavel que normalmente deveria variar."
+    },
+    {
+      "rule_id": "vacuo_possivel_inconsistencia",
+      "signal": "pv_pres_vacuo_cx_engran_inh2o",
+      "subsystem": "lubrificacao",
+      "type": "engineering_hint",
+      "severity": "medium",
+      "title": "Possivel inconsistencia de engenharia no vacuo",
+      "message": "Leitura muito distante da regra esperada. Validar unidade, escala ou sinal antes de acionar manutencao."
+    }
+  ]
+}
