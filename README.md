@@ -73,6 +73,7 @@ uvicorn app.main:app --reload
 
 5. Acesse:
 
+- `http://127.0.0.1:8000/dashboard`
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/status/current`
 - `http://127.0.0.1:8000/status/readings`
@@ -134,6 +135,20 @@ O sinal `pv_pres_vacuo_cx_engran_inh2o` ja nasce com tratamento para possivel di
 - `GET /status/readings?limit=20`: ultimas leituras em ordem decrescente de tempo
 - `GET /status/scores`: score de risco por subsistema
 - `GET /alerts`: alertas ativos persistidos em SQLite
+
+## Visualizacao operacional
+
+A API agora tambem entrega uma tela operacional em:
+
+- `/dashboard`
+
+Ela consome os endpoints existentes e mostra:
+
+- status do servico e fonte de dados
+- snapshot operacional atual
+- score de risco por subsistema
+- alertas ativos
+- indicadores-chave do compressor
 
 ## Evolucao para IA explicativa
 

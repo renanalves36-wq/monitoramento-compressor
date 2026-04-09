@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes_alerts import router as alerts_router
+from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_status import router as status_router
 from app.config import get_settings
 from app.services.health_service import HealthService
@@ -46,3 +47,4 @@ app = FastAPI(
 
 app.include_router(status_router)
 app.include_router(alerts_router)
+app.include_router(dashboard_router)
