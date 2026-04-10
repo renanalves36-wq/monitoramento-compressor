@@ -10,7 +10,12 @@ from typing import Any
 
 import pandas as pd
 
-from app.domain.mappings import CALIBRATION_HINTS, SUBSYSTEM_SIGNALS
+from app.domain.mappings import (
+    CALIBRATION_HINTS,
+    STUCK_SENSOR_SIGNALS,
+    SUBSYSTEM_SIGNALS,
+    ZERO_ABNORMAL_SIGNALS,
+)
 from app.domain.schemas import AlertRecord, DataQualityIssue, SubsystemRiskScore
 
 
@@ -37,33 +42,110 @@ class AlertService:
         feature_frame: pd.DataFrame,
         quality_issues: list[DataQualityIssue],
     ) -> tuple[list[AlertRecord], list[SubsystemRiskScore]]:
-        if feature_frame.empty:
-            return [], self._empty_scores()
+        active_alerts, _event_history, scores = self.evaluate_history(
+            feature_frame=feature_frame,
+            quality_issues=quality_issues,
+        )
+        return active_alerts, scores
 
-        latest = feature_frame.iloc[-1]
+    def evaluate_history(
+        self,
+        feature_frame: pd.DataFrame,
+        quality_issues: list[DataQualityIssue],
+    ) -> tuple[list[AlertRecord], list[AlertRecord], list[SubsystemRiskScore]]:
+        if feature_frame.empty:
+            return [], [], self._empty_scores()
+
+        sorted_frame = feature_frame.sort_values("timestamp").reset_index(drop=True)
+        latest_index = len(sorted_frame) - 1
+
+        open_events: dict[str, AlertRecord] = {}
+        event_history: list[AlertRecord] = []
+
+        for idx, row in sorted_frame.iterrows():
+            history_window = sorted_frame.iloc[max(0, idx - 180) : idx + 1]
+            snapshot_alerts = self._evaluate_snapshot(
+                latest=row,
+                history_window=history_window,
+                quality_issues=quality_issues if idx == latest_index else [],
+            )
+            snapshot_map = {alert.alert_id: alert for alert in snapshot_alerts}
+
+            for alert_id in list(open_events.keys()):
+                if alert_id not in snapshot_map:
+                    closed = open_events.pop(alert_id)
+                    closed.is_active = False
+                    event_history.append(closed)
+
+            for alert_id, alert in snapshot_map.items():
+                if alert_id in open_events:
+                    open_event = open_events[alert_id]
+                    open_event.last_seen_at = alert.last_seen_at
+                    open_event.current_value = alert.current_value
+                    open_event.metadata = alert.metadata
+                    open_event.threshold = alert.threshold
+                    open_event.mode_key = alert.mode_key
+                    continue
+                open_events[alert_id] = alert.model_copy()
+
+        active_alerts = list(open_events.values())
+        for alert in active_alerts:
+            alert.is_active = True
+            event_history.append(alert)
+
+        event_history = sorted(
+            event_history,
+            key=lambda alert: (
+                alert.last_seen_at,
+                self.severity_weights.get(alert.severity, 0.0),
+            ),
+            reverse=True,
+        )
+        active_alerts = sorted(
+            active_alerts,
+            key=lambda alert: (
+                alert.last_seen_at,
+                self.severity_weights.get(alert.severity, 0.0),
+            ),
+            reverse=True,
+        )
+        scores = self._compute_scores(active_alerts)
+        return active_alerts, event_history, scores
+
+    def _evaluate_snapshot(
+        self,
+        latest: pd.Series,
+        history_window: pd.DataFrame,
+        quality_issues: list[DataQualityIssue],
+    ) -> list[AlertRecord]:
         current_ts = pd.to_datetime(latest["timestamp"]).to_pydatetime()
         mode_key = str(latest["mode_key"])
 
         alerts: list[AlertRecord] = []
-        alerts.extend(self._evaluate_fixed_rules(latest=latest, current_ts=current_ts, mode_key=mode_key))
-        alerts.extend(self._evaluate_trend_rules(latest=latest, current_ts=current_ts, mode_key=mode_key))
+        alerts.extend(
+            self._evaluate_fixed_rules(
+                latest=latest,
+                current_ts=current_ts,
+                mode_key=mode_key,
+            )
+        )
+        alerts.extend(
+            self._evaluate_trend_rules(
+                latest=latest,
+                current_ts=current_ts,
+                mode_key=mode_key,
+            )
+        )
         alerts.extend(
             self._evaluate_anomaly_rules(
                 latest=latest,
                 current_ts=current_ts,
                 mode_key=mode_key,
+                history_window=history_window,
                 quality_issues=quality_issues,
             )
         )
-
-        deduplicated = {alert.alert_id: alert for alert in alerts}
-        active_alerts = sorted(
-            deduplicated.values(),
-            key=lambda alert: (alert.last_seen_at, self.severity_weights.get(alert.severity, 0.0)),
-            reverse=True,
-        )
-        scores = self._compute_scores(active_alerts)
-        return active_alerts, scores
+        return list({alert.alert_id: alert for alert in alerts}.values())
 
     def _evaluate_fixed_rules(
         self, latest: pd.Series, current_ts: datetime, mode_key: str
@@ -132,15 +214,39 @@ class AlertService:
         latest: pd.Series,
         current_ts: datetime,
         mode_key: str,
+        history_window: pd.DataFrame,
         quality_issues: list[DataQualityIssue],
     ) -> list[AlertRecord]:
         alerts: list[AlertRecord] = []
         quality_by_signal: dict[tuple[str, str], DataQualityIssue] = {
             (issue.issue_type, issue.signal or ""): issue for issue in quality_issues
         }
+        generated_stuck_signals: set[str] = set()
+
+        for signal in STUCK_SENSOR_SIGNALS:
+            details = self._detect_sensor_stuck(history_window=history_window, signal=signal)
+            if details is None:
+                continue
+            generated_stuck_signals.add(signal)
+            alerts.append(
+                self._build_alert(
+                    rule_id=f"sensor_stuck::{signal}",
+                    layer="operational_anomaly",
+                    subsystem=self._infer_subsystem(signal),
+                    signal=signal,
+                    severity="medium",
+                    title=f"Possivel sensor travado: {signal}",
+                    message="Possivel sensor travado por repeticao persistente do mesmo valor.",
+                    current_value=details.get("repeated_value"),
+                    threshold="variacao esperada > 0",
+                    mode_key=mode_key,
+                    current_ts=current_ts,
+                    metadata=details,
+                )
+            )
 
         for issue in quality_issues:
-            if issue.issue_type == "sensor_stuck" and issue.signal:
+            if issue.issue_type == "sensor_stuck" and issue.signal and issue.signal not in generated_stuck_signals:
                 alerts.append(
                     self._build_alert(
                         rule_id=f"sensor_stuck::{issue.signal}",
@@ -164,6 +270,17 @@ class AlertService:
             issue = quality_by_signal.get(issue_key)
 
             should_trigger = issue is not None
+            if rule["type"] == "zero_abnormal":
+                details = self._detect_zero_abnormal(history_window=history_window, signal=signal)
+                should_trigger = should_trigger or details is not None
+                if issue is None and details is not None:
+                    issue = DataQualityIssue(
+                        issue_type="zero_abnormal",
+                        signal=signal,
+                        timestamp=current_ts,
+                        message="Valor zerado recorrente detectado para uma variavel sensivel.",
+                        details=details,
+                    )
             if rule["type"] == "engineering_hint":
                 should_trigger = self._has_engineering_inconsistency(latest=latest, signal=signal)
 
@@ -192,6 +309,33 @@ class AlertService:
             )
 
         return alerts
+
+    @staticmethod
+    def _detect_sensor_stuck(
+        history_window: pd.DataFrame,
+        signal: str,
+    ) -> dict[str, Any] | None:
+        if signal not in history_window.columns:
+            return None
+        tail = history_window[signal].dropna().tail(10)
+        if len(tail) < 5 or tail.nunique(dropna=True) != 1:
+            return None
+        return {
+            "repeated_value": float(tail.iloc[-1]),
+            "window_points": int(len(tail)),
+        }
+
+    @staticmethod
+    def _detect_zero_abnormal(
+        history_window: pd.DataFrame,
+        signal: str,
+    ) -> dict[str, Any] | None:
+        if signal not in ZERO_ABNORMAL_SIGNALS or signal not in history_window.columns:
+            return None
+        tail = history_window[signal].dropna().tail(5)
+        if len(tail) < 3 or not bool((tail == 0).all()):
+            return None
+        return {"window_points": int(len(tail))}
 
     def _has_engineering_inconsistency(self, latest: pd.Series, signal: str) -> bool:
         value = latest.get(signal)

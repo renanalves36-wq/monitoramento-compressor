@@ -79,9 +79,10 @@ uvicorn app.main:app --reload
 - `http://127.0.0.1:8000/status/current`
 - `http://127.0.0.1:8000/status/readings`
 - `http://127.0.0.1:8000/status/catalog`
-- `http://127.0.0.1:8000/status/trend?signal=pv_pres_sistema_bar&limit=120`
+- `http://127.0.0.1:8000/status/trend?signal=pv_pres_sistema_bar&range_value=24&range_unit=hours&bucket=hours`
 - `http://127.0.0.1:8000/status/scores`
 - `http://127.0.0.1:8000/alerts`
+- `http://127.0.0.1:8000/alerts/recent?limit=5000`
 
 ## Modos de fonte de dados
 
@@ -117,6 +118,7 @@ Server=srv01win185,1433;Database=INDUSOFT;User Id=usuario;Password=senha;Encrypt
 
 Se o SQL Server nao puder ser acessado a partir do ambiente atual, a API continua operando em modo de demonstracao com CSV e persistencia de alertas em SQLite.
 No modo CSV, a leitura foi preparada para bases maiores usando `chunksize`, mantendo apenas a janela necessaria em memoria.
+Quando `DEMO_CSV_FULL_BOOTSTRAP=true`, a primeira carga usa a base inteira do CSV para montar historico, eventos e janelas maiores de analise.
 
 ## Regras e calibracao
 
@@ -150,19 +152,22 @@ A API agora tambem entrega uma tela operacional em:
 
 Ela consome os endpoints existentes e mostra:
 
-- status do servico e fonte de dados
+- status do servico, fonte de dados e cobertura temporal da base
 - snapshot operacional atual
 - score de risco por subsistema
-- alertas ativos
+- alertas ativos separados de eventos recentes
 - indicadores-chave do compressor
-- filtros por subsistema, severidade e busca textual
-- navegação clicavel por sinais
-- grafico temporal com meta, limites, media de 15 min e EWMA
+- filtros por subsistema, severidade, busca textual e indicador
+- navegacao clicavel por sinais
+- grafico temporal com meta, limites, media de 15 min, EWMA e marcadores de alerta
+- troca de escala temporal para minutos, horas e dias
+- agrupamento analitico da serie por minuto, hora ou dia
 
 ## Endpoints analiticos do dashboard
 
 - `GET /status/catalog`: lista os sinais disponiveis para filtros, com unidade, subsistema e limites
-- `GET /status/trend?signal=<nome>&limit=<pontos>`: retorna serie temporal analitica do sinal, com meta, regras e resumo estatistico
+- `GET /status/trend?signal=<nome>&range_value=<n>&range_unit=<minutes|hours|days>&bucket=<raw|minutes|hours|days>`: retorna a serie temporal analitica do sinal, com meta, regras e resumo estatistico
+- `GET /alerts/recent?limit=<n>`: retorna eventos recentes e episodios historicos da base processada
 
 ## Evolucao para IA explicativa
 

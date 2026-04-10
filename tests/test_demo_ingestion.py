@@ -15,6 +15,7 @@ class DemoIngestionTests(unittest.TestCase):
             data_source_mode="demo_csv",
             demo_csv_chunk_size=10,
             demo_csv_bootstrap_rows=25,
+            demo_csv_full_bootstrap=True,
         )
         service = IngestionService(settings)
 
@@ -22,6 +23,7 @@ class DemoIngestionTests(unittest.TestCase):
 
         self.assertEqual(batch.source, "demo_csv")
         self.assertGreater(len(batch.frame), 0)
+        self.assertGreater(len(batch.frame), settings.demo_csv_bootstrap_rows)
         self.assertIn("timestamp", batch.frame.columns)
         self.assertIn("st_oper", batch.frame.columns)
 

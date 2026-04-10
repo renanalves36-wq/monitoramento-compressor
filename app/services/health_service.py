@@ -51,6 +51,8 @@ class HealthService:
         self._feature_frame = pd.DataFrame()
         self._quality_issues = []
         self._risk_scores = self.alert_service._empty_scores()
+        self._active_alerts = []
+        self._alert_events = []
         self._last_refresh_at: datetime | None = None
         self._data_source = "unknown"
 
@@ -73,9 +75,9 @@ class HealthService:
             return
 
         if not batch.frame.empty:
+            self._data_source = batch.source
             self._history_frame = self._merge_history(batch.frame)
             self._quality_issues = batch.quality_issues
-            self._data_source = batch.source
 
         if self._history_frame.empty:
             self._data_source = batch.source
@@ -83,11 +85,13 @@ class HealthService:
             return
 
         self._feature_frame = self.feature_service.compute(self._history_frame)
-        active_alerts, risk_scores = self.alert_service.evaluate(
+        active_alerts, event_history, risk_scores = self.alert_service.evaluate_history(
             feature_frame=self._feature_frame,
             quality_issues=self._quality_issues,
         )
         self.repository.replace_active_alerts(active_alerts)
+        self._active_alerts = active_alerts
+        self._alert_events = event_history
         self._risk_scores = risk_scores
         self._last_refresh_at = utc_now()
 
@@ -119,6 +123,9 @@ class HealthService:
         combined["timestamp"] = pd.to_datetime(combined["timestamp"], errors="coerce")
         combined = combined.dropna(subset=["timestamp"]).sort_values("timestamp")
         combined = combined.drop_duplicates(subset=["timestamp"], keep="last")
+
+        if self._data_source == "demo_csv":
+            return combined.reset_index(drop=True)
 
         latest_timestamp = pd.to_datetime(combined["timestamp"].max()).to_pydatetime()
         cutoff = latest_timestamp - timedelta(hours=self.settings.initial_lookback_hours)
@@ -184,6 +191,8 @@ class HealthService:
             for signal in subsystem_signals:
                 if signal not in available_columns:
                     continue
+                if signal.startswith("sp_"):
+                    continue
                 if signal in self._feature_frame.columns and not pd.api.types.is_numeric_dtype(
                     self._feature_frame[signal]
                 ):
@@ -227,6 +236,20 @@ class HealthService:
         )
 
     def get_signal_trend(self, signal: str, limit: int = 120) -> SignalTrendResponse:
+        return self.get_signal_trend_window(
+            signal=signal,
+            range_value=max(1, limit),
+            range_unit="points",
+            bucket="raw",
+        )
+
+    def get_signal_trend_window(
+        self,
+        signal: str,
+        range_value: int = 6,
+        range_unit: str = "hours",
+        bucket: str = "raw",
+    ) -> SignalTrendResponse:
         self.refresh()
         if (
             self._feature_frame.empty
@@ -238,13 +261,31 @@ class HealthService:
                 label=get_signal_label(signal),
                 subsystem=self._infer_subsystem(signal),
                 unit=get_signal_unit(signal),
+                range_unit=range_unit,
+                range_value=range_value,
+                bucket=bucket,
             )
 
-        trend_frame = (
-            self._feature_frame.sort_values("timestamp")
-            .tail(limit)
-            .reset_index(drop=True)
+        trend_frame = self._slice_trend_frame(
+            signal=signal,
+            range_value=range_value,
+            range_unit=range_unit,
         )
+        trend_frame = self._bucketize_trend_frame(
+            frame=trend_frame,
+            signal=signal,
+            bucket=bucket,
+        )
+        if trend_frame.empty:
+            return SignalTrendResponse(
+                signal=signal,
+                label=get_signal_label(signal),
+                subsystem=self._infer_subsystem(signal),
+                unit=get_signal_unit(signal),
+                range_unit=range_unit,
+                range_value=range_value,
+                bucket=bucket,
+            )
 
         lower_limit, upper_limit, target_value, rules = self._get_signal_limits_and_rules(signal)
         target_signal = TARGET_SIGNAL_BY_SIGNAL.get(signal)
@@ -288,6 +329,9 @@ class HealthService:
             label=get_signal_label(signal),
             subsystem=self._infer_subsystem(signal),
             unit=get_signal_unit(signal),
+            range_unit=range_unit,
+            range_value=range_value,
+            bucket=bucket,
             count=len(points),
             target_signal=target_signal,
             target_label=target_label,
@@ -301,17 +345,111 @@ class HealthService:
 
     def get_service_status(self) -> StatusResponse:
         self.refresh()
+        earliest_ts = None
         latest_ts = None
         if not self._feature_frame.empty:
+            earliest_ts = pd.to_datetime(self._feature_frame["timestamp"].min()).to_pydatetime()
             latest_ts = pd.to_datetime(self._feature_frame["timestamp"].max()).to_pydatetime()
 
         return StatusResponse(
             service_status="ok" if latest_ts else "waiting_for_data",
             data_source=self._data_source,
+            earliest_timestamp=earliest_ts,
             latest_timestamp=latest_ts,
+            history_rows=int(len(self._feature_frame)),
+            recent_alert_events=int(len(self._alert_events)),
             active_alerts=len(self.repository.list_alerts(active_only=True)),
             last_refresh_at=self._last_refresh_at,
         )
+
+    def get_recent_alerts(
+        self,
+        limit: int = 50,
+        subsystem: str | None = None,
+        severity: str | None = None,
+    ) -> AlertsResponse:
+        self.refresh()
+        filtered = self._alert_events
+        if subsystem:
+            filtered = [alert for alert in filtered if alert.subsystem == subsystem]
+        if severity:
+            filtered = [alert for alert in filtered if alert.severity == severity]
+        filtered = sorted(filtered, key=lambda alert: alert.last_seen_at, reverse=True)
+        alerts = filtered[:limit]
+        return AlertsResponse(count=len(alerts), alerts=alerts)
+
+    def _slice_trend_frame(
+        self,
+        signal: str,
+        range_value: int,
+        range_unit: str,
+    ) -> pd.DataFrame:
+        frame = self._feature_frame.sort_values("timestamp").copy()
+        frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+        frame = frame.dropna(subset=["timestamp"])
+        if frame.empty:
+            return frame
+
+        if range_unit == "points":
+            return frame.tail(range_value).reset_index(drop=True)
+
+        latest_timestamp = pd.to_datetime(frame["timestamp"].max()).to_pydatetime()
+        unit_map = {
+            "minutes": timedelta(minutes=range_value),
+            "hours": timedelta(hours=range_value),
+            "days": timedelta(days=range_value),
+        }
+        delta = unit_map.get(range_unit, timedelta(hours=6))
+        start_timestamp = latest_timestamp - delta
+        return frame[frame["timestamp"] >= start_timestamp].reset_index(drop=True)
+
+    def _bucketize_trend_frame(
+        self,
+        frame: pd.DataFrame,
+        signal: str,
+        bucket: str,
+    ) -> pd.DataFrame:
+        if frame.empty or bucket == "raw":
+            return frame.reset_index(drop=True)
+
+        rule_map = {
+            "minutes": "1min",
+            "hours": "1h",
+            "days": "1D",
+        }
+        if bucket not in rule_map:
+            return frame.reset_index(drop=True)
+
+        frame = frame.copy().set_index("timestamp")
+        columns_to_aggregate = {
+            signal: "mean",
+            f"{signal}__ma_15m": "mean",
+            f"{signal}__ewma": "mean",
+            f"{signal}__slope_15m": "last",
+            f"{signal}__slope_1h": "last",
+            f"{signal}__zscore_1h": "last",
+            f"{signal}__std_1h": "mean",
+            "mode_key": "last",
+        }
+        target_signal = TARGET_SIGNAL_BY_SIGNAL.get(signal)
+        if target_signal and target_signal in frame.columns:
+            columns_to_aggregate[target_signal] = "mean"
+
+        aggregate_map = {
+            column: agg
+            for column, agg in columns_to_aggregate.items()
+            if column in frame.columns
+        }
+        if not aggregate_map:
+            return frame.reset_index(drop=True)
+
+        bucketed = (
+            frame.resample(rule_map[bucket])
+            .agg(aggregate_map)
+            .dropna(subset=[signal], how="all")
+            .reset_index()
+        )
+        return bucketed
 
     def _get_signal_limits_and_rules(
         self, signal: str

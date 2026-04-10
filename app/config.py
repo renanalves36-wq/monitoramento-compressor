@@ -47,6 +47,9 @@ class Settings(BaseModel):
     demo_csv_bootstrap_rows: int = Field(
         default=int(os.getenv("DEMO_CSV_BOOTSTRAP_ROWS", "5000"))
     )
+    demo_csv_full_bootstrap: bool = Field(
+        default=os.getenv("DEMO_CSV_FULL_BOOTSTRAP", "true").lower() == "true"
+    )
     alert_rules_path: Path = Field(
         default=BASE_DIR / os.getenv("ALERT_RULES_PATH", "config/alert_rules.json")
     )

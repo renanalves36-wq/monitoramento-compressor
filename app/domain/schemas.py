@@ -109,6 +109,7 @@ class TrendPoint(BaseModel):
 class TrendSummary(BaseModel):
     latest: float | None = None
     previous: float | None = None
+    target_current: float | None = None
     mean: float | None = None
     minimum: float | None = None
     maximum: float | None = None
@@ -124,6 +125,9 @@ class SignalTrendResponse(BaseModel):
     label: str
     subsystem: str
     unit: str | None = None
+    range_unit: str = "hours"
+    range_value: int = 6
+    bucket: str = "raw"
     count: int = 0
     target_signal: str | None = None
     target_label: str | None = None
@@ -139,5 +143,8 @@ class StatusResponse(BaseModel):
     service_status: str
     data_source: str | None = None
     latest_timestamp: datetime | None = None
+    earliest_timestamp: datetime | None = None
+    history_rows: int = 0
+    recent_alert_events: int = 0
     active_alerts: int = 0
     last_refresh_at: datetime | None = None

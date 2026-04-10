@@ -53,10 +53,17 @@ def get_signal_catalog(
 @router.get("/trend", response_model=SignalTrendResponse)
 def get_signal_trend(
     signal: str = Query(..., min_length=3),
-    limit: int = Query(default=120, ge=30, le=500),
+    range_value: int = Query(default=6, ge=1, le=5000),
+    range_unit: str = Query(default="hours", pattern="^(points|minutes|hours|days)$"),
+    bucket: str = Query(default="raw", pattern="^(raw|minutes|hours|days)$"),
     service: HealthService = Depends(get_health_service),
 ) -> SignalTrendResponse:
-    return service.get_signal_trend(signal=signal, limit=limit)
+    return service.get_signal_trend_window(
+        signal=signal,
+        range_value=range_value,
+        range_unit=range_unit,
+        bucket=bucket,
+    )
 
 
 @router.get("", response_model=StatusResponse)

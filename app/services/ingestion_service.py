@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -16,6 +17,7 @@ from app.domain.mappings import (
     DERIVED_SIGNALS,
     NUMERIC_SIGNALS,
     PLAUSIBLE_RANGES,
+    RAW_TO_FRIENDLY,
     STUCK_SENSOR_SIGNALS,
     ZERO_ABNORMAL_SIGNALS,
 )
@@ -147,35 +149,48 @@ class IngestionService:
         limit: int | None,
     ) -> pd.DataFrame:
         parameter_ts = pd.to_datetime(parameter)
-        row_budget = limit or self.settings.demo_csv_bootstrap_rows
-        fallback_budget = max(row_budget, self.settings.demo_csv_bootstrap_rows)
+        load_full_history = not incremental and self.settings.demo_csv_full_bootstrap
+        row_budget = None if load_full_history else (limit or self.settings.demo_csv_bootstrap_rows)
+        fallback_budget = self.settings.demo_csv_bootstrap_rows if row_budget is None else max(
+            row_budget, self.settings.demo_csv_bootstrap_rows
+        )
 
         filtered_buffer = pd.DataFrame()
         fallback_buffer = pd.DataFrame()
         matched_any = False
+        delimiter = self._detect_csv_delimiter(demo_path)
 
         reader = pd.read_csv(
             demo_path,
+            sep=delimiter,
+            encoding="utf-8-sig",
             decimal=",",
             chunksize=self.settings.demo_csv_chunk_size,
+            low_memory=False,
         )
 
         for chunk in reader:
+            chunk = self._standardize_demo_chunk(chunk)
             if "timestamp" not in chunk.columns:
-                raise ValueError("Demo CSV must contain a 'timestamp' column.")
+                available_columns = ", ".join(map(str, chunk.columns.tolist()[:12]))
+                raise ValueError(
+                    "Demo CSV must contain a timestamp column after normalization. "
+                    f"Columns found: {available_columns}"
+                )
 
-            chunk["timestamp"] = pd.to_datetime(chunk["timestamp"], errors="coerce")
             chunk = chunk.dropna(subset=["timestamp"])
             if chunk.empty:
                 continue
 
-            fallback_buffer = (
-                pd.concat([fallback_buffer, chunk], ignore_index=True)
-                .tail(fallback_budget)
-                .reset_index(drop=True)
-            )
+            concatenated = pd.concat([fallback_buffer, chunk], ignore_index=True)
+            if row_budget is None:
+                fallback_buffer = concatenated
+            else:
+                fallback_buffer = concatenated.tail(fallback_budget).reset_index(drop=True)
 
-            if incremental:
+            if load_full_history:
+                window_chunk = chunk
+            elif incremental:
                 window_chunk = chunk[chunk["timestamp"] > parameter_ts]
             else:
                 window_chunk = chunk[chunk["timestamp"] >= parameter_ts]
@@ -184,11 +199,14 @@ class IngestionService:
                 continue
 
             matched_any = True
-            filtered_buffer = (
-                pd.concat([filtered_buffer, window_chunk], ignore_index=True)
-                .tail(row_budget)
-                .reset_index(drop=True)
-            )
+            if row_budget is None:
+                filtered_buffer = pd.concat([filtered_buffer, window_chunk], ignore_index=True)
+            else:
+                filtered_buffer = (
+                    pd.concat([filtered_buffer, window_chunk], ignore_index=True)
+                    .tail(row_budget)
+                    .reset_index(drop=True)
+                )
 
         if matched_any:
             return filtered_buffer.sort_values("timestamp").reset_index(drop=True)
@@ -196,7 +214,50 @@ class IngestionService:
         if incremental:
             return pd.DataFrame()
 
+        if row_budget is None:
+            return fallback_buffer.sort_values("timestamp").reset_index(drop=True)
         return fallback_buffer.sort_values("timestamp").tail(row_budget).reset_index(drop=True)
+
+    @staticmethod
+    def _detect_csv_delimiter(demo_path: Any) -> str:
+        with open(demo_path, "r", encoding="utf-8-sig", newline="") as file_obj:
+            sample = file_obj.read(4096)
+        if not sample:
+            return ","
+        try:
+            return csv.Sniffer().sniff(sample, delimiters=",;|\t").delimiter
+        except csv.Error:
+            return ","
+
+    @staticmethod
+    def _standardize_demo_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
+        rename_map = {
+            "Id": "id",
+            "TimeStamp": "timestamp",
+            "Timestamp": "timestamp",
+            "Hora": "hora",
+            "Data": "data",
+            "dsTurno": "ds_turno",
+            "Status": "status",
+            "stIntegracao": "st_integracao",
+            "dtIntegracao": "dt_integracao",
+            "dsErro": "ds_erro",
+            "stPontoDeControle": "st_ponto_de_controle",
+            "012CPA0008_PV_POSICAO_ALIVIO%": "pv_pos_alivio_pct",
+            "012CPA0008_PV_POSIÇÃO_ALIVIO%": "pv_pos_alivio_pct",
+        }
+        rename_map.update(RAW_TO_FRIENDLY)
+        chunk = chunk.rename(
+            columns={column: rename_map[column] for column in chunk.columns if column in rename_map}
+        )
+
+        if "timestamp" in chunk.columns:
+            chunk["timestamp"] = pd.to_datetime(
+                chunk["timestamp"],
+                errors="coerce",
+                dayfirst=True,
+            )
+        return chunk
 
     @staticmethod
     def _row_to_dict(row: Any, columns: list[str]) -> dict[str, Any]:
@@ -215,7 +276,7 @@ class IngestionService:
         issues: list[DataQualityIssue] = []
         clean = frame.copy()
 
-        clean["timestamp"] = pd.to_datetime(clean["timestamp"], errors="coerce")
+        clean["timestamp"] = pd.to_datetime(clean["timestamp"], errors="coerce", dayfirst=True)
         invalid_ts = clean["timestamp"].isna().sum()
         if invalid_ts:
             issues.append(
@@ -245,7 +306,19 @@ class IngestionService:
         if "status" in clean.columns:
             clean["status"] = pd.to_numeric(clean["status"], errors="coerce").astype("Int64")
         if "st_plc" in clean.columns:
-            clean["st_plc"] = clean["st_plc"].astype("boolean")
+            clean["st_plc"] = (
+                clean["st_plc"]
+                .map(
+                    lambda value: (
+                        value
+                        if isinstance(value, bool)
+                        else str(value).strip().lower() in {"1", "true", "sim", "yes"}
+                        if value is not None and not pd.isna(value)
+                        else pd.NA
+                    )
+                )
+                .astype("boolean")
+            )
 
         for column in ("hora", "data", "ds_turno", "st_oper", "st_carga_oper", "ds_erro"):
             if column in clean.columns:
