@@ -120,21 +120,12 @@ class IngestionService:
         if not demo_path.exists():
             raise FileNotFoundError(f"Demo CSV not found: {demo_path}")
 
-        raw_frame = pd.read_csv(demo_path, decimal=",")
-        if "timestamp" not in raw_frame.columns:
-            raise ValueError("Demo CSV must contain a 'timestamp' column.")
-
-        raw_frame["timestamp"] = pd.to_datetime(raw_frame["timestamp"], errors="coerce")
-        if incremental:
-            filtered = raw_frame[raw_frame["timestamp"] > pd.to_datetime(parameter)]
-        else:
-            filtered = raw_frame[raw_frame["timestamp"] >= pd.to_datetime(parameter)]
-            if filtered.empty and not raw_frame.empty:
-                filtered = raw_frame.copy()
-
-        filtered = filtered.sort_values("timestamp")
-        if limit:
-            filtered = filtered.tail(limit)
+        filtered = self._read_demo_csv_window(
+            demo_path=demo_path,
+            parameter=parameter,
+            incremental=incremental,
+            limit=limit,
+        )
 
         clean_frame, issues = self._clean_and_validate(filtered.reset_index(drop=True))
         self.logger.info(
@@ -147,6 +138,65 @@ class IngestionService:
             },
         )
         return IngestionBatch(frame=clean_frame, quality_issues=issues, source="demo_csv")
+
+    def _read_demo_csv_window(
+        self,
+        demo_path: Any,
+        parameter: datetime,
+        incremental: bool,
+        limit: int | None,
+    ) -> pd.DataFrame:
+        parameter_ts = pd.to_datetime(parameter)
+        row_budget = limit or self.settings.demo_csv_bootstrap_rows
+        fallback_budget = max(row_budget, self.settings.demo_csv_bootstrap_rows)
+
+        filtered_buffer = pd.DataFrame()
+        fallback_buffer = pd.DataFrame()
+        matched_any = False
+
+        reader = pd.read_csv(
+            demo_path,
+            decimal=",",
+            chunksize=self.settings.demo_csv_chunk_size,
+        )
+
+        for chunk in reader:
+            if "timestamp" not in chunk.columns:
+                raise ValueError("Demo CSV must contain a 'timestamp' column.")
+
+            chunk["timestamp"] = pd.to_datetime(chunk["timestamp"], errors="coerce")
+            chunk = chunk.dropna(subset=["timestamp"])
+            if chunk.empty:
+                continue
+
+            fallback_buffer = (
+                pd.concat([fallback_buffer, chunk], ignore_index=True)
+                .tail(fallback_budget)
+                .reset_index(drop=True)
+            )
+
+            if incremental:
+                window_chunk = chunk[chunk["timestamp"] > parameter_ts]
+            else:
+                window_chunk = chunk[chunk["timestamp"] >= parameter_ts]
+
+            if window_chunk.empty:
+                continue
+
+            matched_any = True
+            filtered_buffer = (
+                pd.concat([filtered_buffer, window_chunk], ignore_index=True)
+                .tail(row_budget)
+                .reset_index(drop=True)
+            )
+
+        if matched_any:
+            return filtered_buffer.sort_values("timestamp").reset_index(drop=True)
+
+        if incremental:
+            return pd.DataFrame()
+
+        return fallback_buffer.sort_values("timestamp").tail(row_budget).reset_index(drop=True)
 
     @staticmethod
     def _row_to_dict(row: Any, columns: list[str]) -> dict[str, Any]:

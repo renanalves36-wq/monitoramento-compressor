@@ -9,25 +9,25 @@ PART_1 = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TA6000 Analytical Dashboard</title>
+  <title>Painel TA6000</title>
   <style>
     :root {
-      --bg-top: #f3efe3;
-      --bg-bottom: #e4dccd;
-      --panel: rgba(255, 250, 242, 0.86);
-      --panel-strong: #fffdf8;
-      --line: rgba(17, 35, 58, 0.12);
-      --ink: #11233a;
-      --muted: #5f6c7b;
-      --teal: #0f766e;
-      --teal-soft: rgba(15, 118, 110, 0.12);
-      --gold: #d97706;
-      --gold-soft: rgba(217, 119, 6, 0.12);
-      --red: #b45309;
-      --red-soft: rgba(180, 83, 9, 0.12);
-      --critical: #8b1e1e;
-      --critical-soft: rgba(139, 30, 30, 0.12);
-      --shadow: 0 18px 46px rgba(17, 35, 58, 0.12);
+      --bg-top: #121316;
+      --bg-bottom: #1a1c20;
+      --panel: rgba(29, 31, 36, 0.9);
+      --panel-strong: #1e2127;
+      --line: rgba(255, 255, 255, 0.08);
+      --ink: #f4f6f8;
+      --muted: #9aa4b3;
+      --teal: #8ed18a;
+      --teal-soft: rgba(142, 209, 138, 0.12);
+      --gold: #f1c65a;
+      --gold-soft: rgba(241, 198, 90, 0.12);
+      --red: #ff8c5a;
+      --red-soft: rgba(255, 140, 90, 0.14);
+      --critical: #ff5e5e;
+      --critical-soft: rgba(255, 94, 94, 0.14);
+      --shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
       --radius: 26px;
     }
 
@@ -39,8 +39,8 @@ PART_1 = """
       color: var(--ink);
       font-family: Georgia, "Times New Roman", serif;
       background:
-        radial-gradient(circle at 0% 0%, rgba(15, 118, 110, 0.18), transparent 30%),
-        radial-gradient(circle at 100% 0%, rgba(217, 119, 6, 0.18), transparent 24%),
+        radial-gradient(circle at 0% 0%, rgba(142, 209, 138, 0.12), transparent 30%),
+        radial-gradient(circle at 100% 0%, rgba(241, 198, 90, 0.12), transparent 24%),
         linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
       min-height: 100vh;
     }
@@ -56,7 +56,7 @@ PART_1 = """
       overflow: hidden;
       border-radius: 34px;
       padding: 28px;
-      background: linear-gradient(135deg, rgba(17, 35, 58, 0.97), rgba(15, 118, 110, 0.88));
+      background: linear-gradient(135deg, rgba(17, 18, 22, 0.98), rgba(40, 42, 48, 0.94));
       color: #fff6ea;
       box-shadow: var(--shadow);
     }
@@ -74,7 +74,7 @@ PART_1 = """
       height: 280px;
       right: -80px;
       top: -60px;
-      background: rgba(217, 119, 6, 0.22);
+      background: rgba(241, 198, 90, 0.12);
       filter: blur(10px);
     }
 
@@ -113,8 +113,8 @@ PART_1 = """
       min-width: 220px;
       padding: 14px 16px;
       border-radius: 20px;
-      background: rgba(255, 246, 234, 0.1);
-      border: 1px solid rgba(255, 246, 234, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       font-family: Arial, Helvetica, sans-serif;
       font-size: 0.92rem;
       line-height: 1.45;
@@ -150,16 +150,16 @@ PART_1 = """
 
     .badge {
       cursor: default;
-      background: rgba(255, 246, 234, 0.1);
-      color: #fff6ea;
-      border-color: rgba(255, 246, 234, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      color: #f4f6f8;
+      border-color: rgba(255, 255, 255, 0.08);
     }
 
     .chip,
     .window-button {
-      background: rgba(17, 35, 58, 0.04);
+      background: rgba(255, 255, 255, 0.04);
       color: var(--ink);
-      border-color: rgba(17, 35, 58, 0.06);
+      border-color: rgba(255, 255, 255, 0.08);
     }
 
     .chip:hover,
@@ -172,9 +172,9 @@ PART_1 = """
 
     .chip.active,
     .window-button.active {
-      background: linear-gradient(135deg, rgba(15, 118, 110, 0.18), rgba(217, 119, 6, 0.18));
-      border-color: rgba(15, 118, 110, 0.48);
-      box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.1);
+      background: linear-gradient(135deg, rgba(142, 209, 138, 0.12), rgba(241, 198, 90, 0.12));
+      border-color: rgba(142, 209, 138, 0.34);
+      box-shadow: inset 0 0 0 1px rgba(142, 209, 138, 0.08);
     }
 
     .layout {
@@ -276,8 +276,8 @@ PART_1 = """
     .stat {
       padding: 18px;
       border-radius: 22px;
-      background: rgba(255, 255, 255, 0.44);
-      border: 1px solid rgba(17, 35, 58, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
     }
 
     .stat-value {
@@ -298,8 +298,8 @@ PART_1 = """
       position: relative;
       border-radius: 24px;
       overflow: hidden;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(253, 247, 236, 0.84));
-      border: 1px solid rgba(17, 35, 58, 0.08);
+      background: linear-gradient(180deg, rgba(20, 22, 26, 0.98), rgba(29, 31, 36, 0.98));
+      border: 1px solid rgba(255, 255, 255, 0.08);
       min-height: 420px;
       padding: 12px;
     }
@@ -379,20 +379,22 @@ PART_2 = """
     .risk-item {
       cursor: pointer;
       transition: 140ms ease;
+      display: grid;
+      gap: 10px;
     }
 
     .risk-item:hover,
     .signal-item:hover,
     .alert-item:hover {
       transform: translateY(-2px);
-      border-color: rgba(15, 118, 110, 0.24);
+      border-color: rgba(142, 209, 138, 0.24);
     }
 
     .risk-item.active,
     .signal-item.active {
-      border-color: rgba(15, 118, 110, 0.5);
-      box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.14);
-      background: linear-gradient(180deg, rgba(15, 118, 110, 0.06), rgba(255, 253, 248, 1));
+      border-color: rgba(142, 209, 138, 0.34);
+      box-shadow: inset 0 0 0 1px rgba(142, 209, 138, 0.12);
+      background: linear-gradient(180deg, rgba(142, 209, 138, 0.06), rgba(30, 33, 39, 1));
     }
 
     .risk-top,
@@ -405,19 +407,68 @@ PART_2 = """
       margin-bottom: 8px;
     }
 
+    .gauge-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .gauge {
+      --value: 0;
+      --gauge-color: #8ed18a;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      position: relative;
+      background:
+        radial-gradient(circle at center, rgba(0, 0, 0, 0.25), transparent 62%),
+        conic-gradient(from 210deg, var(--gauge-color) calc(var(--value) * 1%), rgba(255, 255, 255, 0.07) 0);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    .gauge::after {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border-radius: 50%;
+      background: #16191d;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .gauge-value {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-family: Arial, Helvetica, sans-serif;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .gauge-value small {
+      font-size: 0.66rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
     .risk-bar {
       width: 100%;
       height: 11px;
       border-radius: 999px;
       overflow: hidden;
-      background: rgba(17, 35, 58, 0.08);
+      background: rgba(255, 255, 255, 0.08);
       margin: 10px 0 8px;
     }
 
     .risk-fill {
       height: 100%;
       border-radius: 999px;
-      background: linear-gradient(90deg, #1f7a4d, #d97706, #b45309, #8b1e1e);
+      background: linear-gradient(90deg, #8ed18a, #f1c65a, #ff8c5a, #ff5e5e);
     }
 
     .pill {
@@ -438,7 +489,7 @@ PART_2 = """
     .sev-medium { background: var(--gold-soft); color: var(--gold); }
     .sev-high { background: var(--red-soft); color: var(--red); }
     .sev-critical { background: var(--critical-soft); color: var(--critical); }
-    .sev-all { background: rgba(17, 35, 58, 0.08); color: var(--ink); }
+    .sev-all { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
 
     .signal-item {
       cursor: pointer;
@@ -470,7 +521,7 @@ PART_2 = """
       max-width: 240px;
       padding: 10px 12px;
       border-radius: 16px;
-      background: rgba(17, 35, 58, 0.96);
+      background: rgba(10, 12, 15, 0.96);
       color: #fff6ea;
       border: 1px solid rgba(255, 246, 234, 0.12);
       box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
@@ -486,8 +537,8 @@ PART_2 = """
     .empty {
       padding: 18px;
       border-radius: 18px;
-      border: 1px dashed rgba(17, 35, 58, 0.16);
-      background: rgba(255, 255, 255, 0.48);
+      border: 1px dashed rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.03);
     }
 
     @media (max-width: 1280px) {
@@ -517,18 +568,18 @@ PART_2 = """
     <section class="hero">
       <div class="hero-top">
         <div>
-          <h1>TA6000 Analytical Cockpit</h1>
-          <p>Visualizacao operacional com leitura analitica do compressor, filtros interativos, graficos temporais com linha de meta e navegacao por subsistema pensada para investigacao rapida.</p>
+          <h1>Compressor TA6000</h1>
+          <p>Painel operacional para acompanhar o compressor com filtros uteis, tendencia ao longo do tempo, linha de meta e leitura amigavel por subsistema.</p>
         </div>
         <div class="hero-note">
-          Clique em um subsistema, depois em um sinal, e o painel atualiza sem recarregar a pagina. A linha dourada mostra a meta ou o setpoint; a banda suave mostra os limites operacionais quando existirem.
+          Clique em um subsistema e depois em um indicador. O painel responde sem recarregar a pagina. Se o SQL nao responder, a leitura pode seguir por CSV.
         </div>
       </div>
       <div class="badges">
         <div class="badge" id="service-status">Status: carregando...</div>
         <div class="badge" id="data-source">Fonte: --</div>
         <div class="badge" id="last-refresh">Atualizacao: --</div>
-        <div class="badge" id="active-selection">Sinal: --</div>
+        <div class="badge" id="active-selection">Indicador: --</div>
       </div>
     </section>
 
@@ -537,51 +588,51 @@ PART_2 = """
         <div class="card-header">
           <div>
             <p class="eyebrow">Controles</p>
-            <h2>Filtros e Navegacao</h2>
+            <h2>Filtros do Painel</h2>
           </div>
-          <div class="subtext">O painel preserva o contexto do clique atual e faz atualizacao incremental a cada 30 segundos.</div>
+          <div class="subtext">Os cliques atualizam o painel sem recarregar a pagina e a leitura e renovada automaticamente a cada 30 segundos.</div>
         </div>
         <div class="chip-row" id="subsystem-chips"></div>
         <div class="filters">
           <div class="filter">
-            <label for="signal-select">Sinal monitorado</label>
+            <label for="signal-select">Indicador principal</label>
             <select id="signal-select"></select>
           </div>
           <div class="filter">
-            <label for="severity-select">Severidade dos alertas</label>
+            <label for="severity-select">Prioridade do alerta</label>
             <select id="severity-select"></select>
           </div>
           <div class="filter">
-            <label for="alert-search">Busca rapida</label>
+            <label for="alert-search">Buscar alerta</label>
             <input id="alert-search" type="text" placeholder="filtrar titulo, regra ou subsistema" />
           </div>
           <div class="filter">
-            <label>Janela temporal</label>
+            <label>Periodo do grafico</label>
             <div class="window-buttons" id="window-buttons"></div>
           </div>
           <div class="filter">
-            <label for="refresh-button">Comando</label>
-            <button class="window-button" id="refresh-button" type="button">Atualizar agora</button>
+            <label for="refresh-button">Atualizacao</label>
+            <button class="window-button" id="refresh-button" type="button">Atualizar painel</button>
           </div>
         </div>
       </section>
 
       <section class="stats">
-        <article class="stat"><p class="eyebrow">Alertas ativos</p><h3 class="stat-value" id="metric-alerts">--</h3><p class="stat-note">Alertas apos filtros aplicados</p></article>
+        <article class="stat"><p class="eyebrow">Alertas ativos</p><h3 class="stat-value" id="metric-alerts">--</h3><p class="stat-note">Total dentro dos filtros atuais</p></article>
         <article class="stat"><p class="eyebrow">Maior risco</p><h3 class="stat-value" id="metric-top-risk">--</h3><p class="stat-note" id="metric-top-risk-label">Sem score</p></article>
         <article class="stat"><p class="eyebrow">Valor atual</p><h3 class="stat-value" id="metric-current-value">--</h3><p class="stat-note" id="metric-current-unit">Sinal selecionado</p></article>
         <article class="stat"><p class="eyebrow">Meta atual</p><h3 class="stat-value" id="metric-target-value">--</h3><p class="stat-note" id="metric-target-label">Meta / setpoint</p></article>
         <article class="stat"><p class="eyebrow">Desvio</p><h3 class="stat-value" id="metric-delta">--</h3><p class="stat-note">Variacao do ultimo ponto</p></article>
-        <article class="stat"><p class="eyebrow">Slope 15 min</p><h3 class="stat-value" id="metric-slope">--</h3><p class="stat-note">Tendencia recente</p></article>
+        <article class="stat"><p class="eyebrow">Tendencia 15 min</p><h3 class="stat-value" id="metric-slope">--</h3><p class="stat-note">Ritmo mais recente</p></article>
       </section>
 
       <section class="card chart-card">
         <div class="card-header">
           <div>
-            <p class="eyebrow">Serie Temporal</p>
+            <p class="eyebrow">Evolucao no tempo</p>
             <h2 id="trend-title">Carregando tendencia...</h2>
           </div>
-          <div class="subtext" id="trend-subtitle">Aguardando serie temporal</div>
+          <div class="subtext" id="trend-subtitle">Aguardando dados do grafico</div>
         </div>
         <div class="chart-wrap" id="chart-wrap">
           <svg id="trend-chart" viewBox="0 0 920 420" preserveAspectRatio="none"></svg>
@@ -600,14 +651,14 @@ PART_2 = """
         <div class="card-header">
           <div>
             <p class="eyebrow">Contexto</p>
-            <h2>Leitura Operacional</h2>
+            <h2>Resumo Atual</h2>
           </div>
           <div class="subtext" id="snapshot-timestamp">--</div>
         </div>
         <div class="snapshot-grid" id="snapshot-grid"></div>
-        <div class="card-header" style="margin-top:18px;"><div><p class="eyebrow">Qualidade</p><h3>Ultimos apontamentos</h3></div></div>
+        <div class="card-header" style="margin-top:18px;"><div><p class="eyebrow">Qualidade</p><h3>Observacoes recentes</h3></div></div>
         <div class="quality-list" id="quality-list"></div>
-        <div class="card-header" style="margin-top:18px;"><div><p class="eyebrow">Regras associadas</p><h3>Meta, limites e criterios</h3></div></div>
+        <div class="card-header" style="margin-top:18px;"><div><p class="eyebrow">Regras</p><h3>Meta e limites</h3></div></div>
         <div class="rules-list" id="rules-list"></div>
       </section>
 """
@@ -615,8 +666,8 @@ PART_3 = """
       <section class="card signals-card">
         <div class="card-header">
           <div>
-            <p class="eyebrow">Navegacao por Sinal</p>
-            <h2>Matriz do Subsistema</h2>
+            <p class="eyebrow">Indicadores</p>
+            <h2>Mapa do Subsistema</h2>
           </div>
           <div class="subtext" id="signals-subtitle">Clique em um sinal para atualizar o grafico</div>
         </div>
@@ -628,7 +679,7 @@ PART_3 = """
         <div class="card-header">
           <div>
             <p class="eyebrow">Alertas</p>
-            <h2>Fila Analitica</h2>
+            <h2>Painel de Alertas</h2>
           </div>
           <div class="subtext">Filtragem instantanea por severidade, subsistema e texto.</div>
         </div>
@@ -695,6 +746,13 @@ PART_3 = """
       return `sev-${String(severity || "all").toLowerCase()}`;
     }
 
+    function scoreColor(score) {
+      if (score >= 80) return "#ff5e5e";
+      if (score >= 60) return "#ff8c5a";
+      if (score >= 35) return "#f1c65a";
+      return "#8ed18a";
+    }
+
     function safeArray(value) {
       return Array.isArray(value) ? value : [];
     }
@@ -751,7 +809,7 @@ PART_3 = """
       const subsystems = ["all", ...safeArray(state.catalog?.subsystems)];
       container.innerHTML = subsystems.map((subsystem) => `
         <button class="chip ${state.subsystem === subsystem ? "active" : ""}" data-subsystem="${subsystem}" type="button">
-          ${subsystem === "all" ? "Todos os subsistemas" : subsystem}
+          ${subsystem === "all" ? "Visao geral" : subsystem}
         </button>
       `).join("");
       container.querySelectorAll("[data-subsystem]").forEach((button) => {
@@ -790,7 +848,7 @@ PART_3 = """
       document.getElementById("service-status").textContent = `Status: ${state.status?.service_status || "--"}`;
       document.getElementById("data-source").textContent = `Fonte: ${state.status?.data_source || "--"}`;
       document.getElementById("last-refresh").textContent = `Atualizacao: ${formatDate(state.status?.last_refresh_at)}`;
-      document.getElementById("active-selection").textContent = `Sinal: ${getSelectedSignalMeta()?.label || "--"}`;
+      document.getElementById("active-selection").textContent = `Indicador: ${getSelectedSignalMeta()?.label || "--"}`;
     }
 
     function renderMetrics() {
@@ -872,12 +930,19 @@ PART_4 = """
       const container = document.getElementById("risk-grid");
       container.innerHTML = safeArray(state.scores).map((item) => `
         <div class="risk-item ${state.subsystem === item.subsystem ? "active" : ""}" data-risk="${item.subsystem}">
-          <div class="risk-top">
-            <div><div class="signal-label">${item.subsystem}</div><div>${formatNumber(item.score, 1)}</div></div>
-            <span class="pill ${severityClass(item.highest_severity || "all")}">${item.highest_severity || "none"}</span>
+          <div class="gauge-row">
+            <div class="gauge" style="--value:${Math.min(100, item.score)}; --gauge-color:${scoreColor(item.score)};">
+              <div class="gauge-value">${formatNumber(item.score, 0)}<small>nota</small></div>
+            </div>
+            <div style="flex:1;">
+              <div class="risk-top">
+                <div><div class="signal-label">${item.subsystem}</div><div>${item.rationale?.[0] || "Sem destaque"}</div></div>
+                <span class="pill ${severityClass(item.highest_severity || "all")}">${item.highest_severity || "ok"}</span>
+              </div>
+            </div>
           </div>
           <div class="risk-bar"><div class="risk-fill" style="width:${Math.min(100, item.score)}%"></div></div>
-          <div class="signal-meta">Alertas: ${item.active_alerts}</div>
+          <div class="signal-meta">Alertas ativos: ${item.active_alerts}</div>
         </div>
       `).join("");
       container.querySelectorAll("[data-risk]").forEach((element) => {

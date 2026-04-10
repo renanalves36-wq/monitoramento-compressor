@@ -11,7 +11,11 @@ from app.services.ingestion_service import IngestionService
 
 class DemoIngestionTests(unittest.TestCase):
     def test_demo_csv_returns_rows(self) -> None:
-        settings = Settings(data_source_mode="demo_csv")
+        settings = Settings(
+            data_source_mode="demo_csv",
+            demo_csv_chunk_size=10,
+            demo_csv_bootstrap_rows=25,
+        )
         service = IngestionService(settings)
 
         batch = service.fetch_recent_window(datetime(2030, 1, 1, 0, 0, 0))

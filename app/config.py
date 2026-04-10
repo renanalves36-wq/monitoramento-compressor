@@ -41,6 +41,12 @@ class Settings(BaseModel):
     )
     cache_ttl_seconds: int = Field(default=int(os.getenv("CACHE_TTL_SECONDS", "60")))
     api_readings_limit: int = Field(default=int(os.getenv("API_READINGS_LIMIT", "50")))
+    demo_csv_chunk_size: int = Field(
+        default=int(os.getenv("DEMO_CSV_CHUNK_SIZE", "20000"))
+    )
+    demo_csv_bootstrap_rows: int = Field(
+        default=int(os.getenv("DEMO_CSV_BOOTSTRAP_ROWS", "5000"))
+    )
     alert_rules_path: Path = Field(
         default=BASE_DIR / os.getenv("ALERT_RULES_PATH", "config/alert_rules.json")
     )

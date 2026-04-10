@@ -6,6 +6,7 @@ Sistema em Python para monitoramento inteligente, alerta antecipado e apoio a pr
 
 - Leitura incremental por `TimeStamp` usando `mssql-python`
 - Fallback automatico para CSV de demonstracao quando o SQL Server nao estiver acessivel
+- Leitura de CSV grande em blocos, para contingencia quando o SQL Server nao responder
 - Query SQL com `SELECT` explicito, aliases amigaveis e tratamento de colunas com numero, `%` e acento
 - Limpeza e validacao de dados: nulos, duplicidade temporal, ordenacao, tipos, sensores travados, zeros anormais e faixa plausivel
 - Features estatisticas por modo operacional: medias moveis, desvio padrao, min/max, slope, z-score e EWMA
@@ -95,6 +96,8 @@ Para Codespaces ou qualquer ambiente sem acesso a rede interna da empresa, use:
 ```env
 DATA_SOURCE_MODE=demo_csv
 DEMO_CSV_PATH=data/demo_ta6000.csv
+DEMO_CSV_CHUNK_SIZE=20000
+DEMO_CSV_BOOTSTRAP_ROWS=5000
 ```
 
 O arquivo de demonstracao ja vem no projeto em [demo_ta6000.csv](/c:/Users/011226939/Documents/Monitoramento%20compressor/data/demo_ta6000.csv).
@@ -113,6 +116,7 @@ Server=srv01win185,1433;Database=INDUSOFT;User Id=usuario;Password=senha;Encrypt
 ```
 
 Se o SQL Server nao puder ser acessado a partir do ambiente atual, a API continua operando em modo de demonstracao com CSV e persistencia de alertas em SQLite.
+No modo CSV, a leitura foi preparada para bases maiores usando `chunksize`, mantendo apenas a janela necessaria em memoria.
 
 ## Regras e calibracao
 
