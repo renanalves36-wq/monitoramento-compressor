@@ -47,7 +47,16 @@ const state = {
   rangeUnit: "hours",
   bucket: "hours",
   search: "",
+  trendRequestId: 0,
 };
+
+async function fetchJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Falha ao carregar ${url}: HTTP ${response.status}`);
+  }
+  return response.json();
+}
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -209,6 +218,24 @@ function syncFilterInputs() {
   if (state.signal) signalSelect.value = state.signal;
 }
 
+function setTrendLoading() {
+  document.getElementById("trend-title").textContent = "Atualizando grafico...";
+  document.getElementById("trend-subtitle").textContent = "Buscando nova serie temporal para o indicador selecionado.";
+  document.getElementById("trend-chart").innerHTML = "";
+  document.getElementById("chart-tooltip").classList.remove("visible");
+}
+
+async function focusSignal(signal, subsystem = null) {
+  if (subsystem) {
+    state.subsystem = subsystem;
+  }
+  state.signal = signal;
+  ensureSignalSelection();
+  renderAll();
+  setTrendLoading();
+  await loadTrend();
+}
+
 function renderSubsystemPills() {
   const container = document.getElementById("subsystem-pills");
   const subsystems = ["all", ...safeArray(state.catalog?.subsystems)];
@@ -225,6 +252,7 @@ function renderSubsystemPills() {
       state.subsystem = button.dataset.subsystem;
       ensureSignalSelection();
       renderAll();
+      setTrendLoading();
       await loadTrend();
     });
   });
@@ -248,6 +276,7 @@ function renderPresetButtons() {
       state.bucket = button.dataset.bucket;
       syncFilterInputs();
       renderPresetButtons();
+      setTrendLoading();
       await loadTrend();
     });
   });
@@ -352,6 +381,7 @@ function renderScorePanel() {
       state.subsystem = element.dataset.scoreSubsystem;
       ensureSignalSelection();
       renderAll();
+      setTrendLoading();
       await loadTrend();
     });
   });
@@ -379,16 +409,6 @@ function renderContextPanel() {
     </div>
   `).join("");
 
-  const issues = safeArray(snapshot.data_quality_issues);
-  document.getElementById("quality-list").innerHTML = issues.length
-    ? issues.map((issue) => `
-        <div class="stack-item">
-          <div class="stack-title-main">${issue.issue_type}</div>
-          <div class="stack-meta">${issue.signal || "geral"} | ${issue.message}</div>
-        </div>
-      `).join("")
-    : '<div class="empty-state">Nenhuma observacao de qualidade foi apontada na ultima amostra.</div>';
-
   const rules = safeArray(trend.rules);
   document.getElementById("rule-list").innerHTML = rules.length
     ? rules.map((rule) => `
@@ -404,6 +424,19 @@ function renderContextPanel() {
         </div>
       `).join("")
     : '<div class="empty-state">Nao ha regras associadas ao indicador atual.</div>';
+}
+
+function renderQualityPanel() {
+  const snapshot = state.snapshot || {};
+  const issues = safeArray(snapshot.data_quality_issues);
+  document.getElementById("quality-list").innerHTML = issues.length
+    ? issues.map((issue) => `
+        <div class="stack-item">
+          <div class="stack-title-main">${issue.issue_type}</div>
+          <div class="stack-meta">${issue.signal || "geral"} | ${issue.message}</div>
+        </div>
+      `).join("")
+    : '<div class="empty-state">Nenhuma observacao de qualidade foi apontada na ultima amostra.</div>';
 }
 
 function renderAlertList(containerId, alerts, emptyText, counterId) {
@@ -431,11 +464,8 @@ function renderAlertList(containerId, alerts, emptyText, counterId) {
     element.addEventListener("click", async () => {
       const nextSignal = element.dataset.alertSignal;
       const nextSubsystem = element.dataset.alertSubsystem;
-      if (nextSubsystem) state.subsystem = nextSubsystem;
-      if (nextSignal) state.signal = nextSignal;
-      ensureSignalSelection();
-      renderAll();
-      await loadTrend();
+      if (!nextSignal) return;
+      await focusSignal(nextSignal, nextSubsystem || null);
     });
   });
 }
@@ -488,10 +518,7 @@ function renderSignalExplorer() {
 
   container.querySelectorAll("[data-signal]").forEach((element) => {
     element.addEventListener("click", async () => {
-      state.signal = element.dataset.signal;
-      populateSelects();
-      renderSignalExplorer();
-      await loadTrend();
+      await focusSignal(element.dataset.signal);
     });
   });
 }
@@ -712,41 +739,56 @@ function renderAll() {
   renderOperationalPanel();
   renderScorePanel();
   renderContextPanel();
+  renderQualityPanel();
   renderAlertPanels();
   renderSignalExplorer();
 }
 
 async function loadTrend() {
   if (!state.signal) return;
+  const currentRequestId = ++state.trendRequestId;
+  const currentSignal = state.signal;
   const params = new URLSearchParams({
-    signal: state.signal,
+    signal: currentSignal,
     range_value: String(state.rangeValue),
     range_unit: state.rangeUnit,
     bucket: state.bucket,
   });
-  const response = await fetch(`/status/trend?${params.toString()}`);
-  state.trend = await response.json();
-  renderContextPanel();
-  renderTrendSummary();
-  renderChart();
+  try {
+    const trendResponse = await fetchJson(`/status/trend?${params.toString()}`);
+    if (currentRequestId !== state.trendRequestId || currentSignal !== state.signal) {
+      return;
+    }
+    state.trend = trendResponse;
+    renderContextPanel();
+    renderTrendSummary();
+    renderChart();
+  } catch (error) {
+    if (currentRequestId !== state.trendRequestId) {
+      return;
+    }
+    document.getElementById("trend-title").textContent = "Falha ao atualizar o grafico";
+    document.getElementById("trend-subtitle").textContent = String(error);
+    document.getElementById("trend-chart").innerHTML = "";
+  }
 }
 
 async function loadBaseData() {
-  const [catalogRes, statusRes, snapshotRes, scoresRes, activeRes, recentRes] = await Promise.all([
-    fetch("/status/catalog"),
-    fetch("/status"),
-    fetch("/status/current"),
-    fetch("/status/scores"),
-    fetch("/alerts"),
-    fetch("/alerts/recent?limit=5000"),
+  const [catalogData, statusData, snapshotData, scoresData, activeData, recentData] = await Promise.all([
+    fetchJson("/status/catalog"),
+    fetchJson("/status"),
+    fetchJson("/status/current"),
+    fetchJson("/status/scores"),
+    fetchJson("/alerts"),
+    fetchJson("/alerts/recent?limit=5000"),
   ]);
 
-  state.catalog = await catalogRes.json();
-  state.status = await statusRes.json();
-  state.snapshot = await snapshotRes.json();
-  state.scores = safeArray((await scoresRes.json()).scores);
-  state.activeAlerts = safeArray((await activeRes.json()).alerts);
-  state.recentAlerts = safeArray((await recentRes.json()).alerts);
+  state.catalog = catalogData;
+  state.status = statusData;
+  state.snapshot = snapshotData;
+  state.scores = safeArray(scoresData.scores);
+  state.activeAlerts = safeArray(activeData.alerts);
+  state.recentAlerts = safeArray(recentData.alerts);
 
   if (!state.signal) {
     state.signal = state.catalog?.default_signal || null;
@@ -761,9 +803,7 @@ async function refreshDashboard() {
 
 function attachEvents() {
   document.getElementById("signal-select").addEventListener("change", async (event) => {
-    state.signal = event.target.value;
-    renderSignalExplorer();
-    await loadTrend();
+    await focusSignal(event.target.value);
   });
 
   document.getElementById("severity-select").addEventListener("change", () => {
@@ -779,24 +819,28 @@ function attachEvents() {
     state.search = document.getElementById("search-input").value.trim();
     ensureSignalSelection();
     renderAll();
+    setTrendLoading();
     await loadTrend();
   });
 
   document.getElementById("range-value").addEventListener("change", async () => {
     state.rangeValue = Number(document.getElementById("range-value").value || 1);
     renderPresetButtons();
+    setTrendLoading();
     await loadTrend();
   });
 
   document.getElementById("range-unit").addEventListener("change", async () => {
     state.rangeUnit = document.getElementById("range-unit").value;
     renderPresetButtons();
+    setTrendLoading();
     await loadTrend();
   });
 
   document.getElementById("bucket-select").addEventListener("change", async () => {
     state.bucket = document.getElementById("bucket-select").value;
     renderPresetButtons();
+    setTrendLoading();
     await loadTrend();
   });
 

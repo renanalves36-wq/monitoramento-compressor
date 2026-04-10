@@ -29,6 +29,7 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: dark;
 }
 
 body {
@@ -85,6 +86,7 @@ body::before {
 .score-panel,
 .trend-panel,
 .context-panel,
+.quality-panel,
 .recent-alerts-panel,
 .active-alerts-panel,
 .explorer-panel {
@@ -96,11 +98,15 @@ body::before {
   grid-template-columns: 1.2fr 0.8fr;
   gap: 20px;
   align-items: start;
+  min-height: 140px;
 }
 
 .topbar-copy {
   position: relative;
   z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 8px;
 }
 
 .topbar-copy h1,
@@ -114,6 +120,7 @@ body::before {
 .topbar-copy h1 {
   font-size: clamp(2.2rem, 5vw, 3.8rem);
   line-height: 0.95;
+  color: var(--text);
 }
 
 .eyebrow {
@@ -129,6 +136,7 @@ body::before {
   margin-top: 16px;
   font-size: clamp(1.6rem, 3vw, 2.2rem);
   color: var(--green);
+  min-height: 1.2em;
 }
 
 .hero-description,
@@ -156,11 +164,16 @@ button {
   line-height: 1.5;
 }
 
+.hero-description {
+  max-width: 900px;
+}
+
 .topbar-meta {
   position: relative;
   z-index: 1;
   display: grid;
   justify-items: end;
+  align-content: start;
   gap: 14px;
 }
 
@@ -184,10 +197,11 @@ button {
 select,
 input {
   border-radius: 14px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(240, 200, 93, 0.16);
+  background: rgba(19, 21, 26, 0.96);
   color: var(--text);
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+  color-scheme: dark;
 }
 
 .icon-button,
@@ -205,7 +219,8 @@ input {
 select:hover,
 input:hover {
   transform: translateY(-1px);
-  border-color: rgba(240, 200, 93, 0.3);
+  border-color: rgba(240, 200, 93, 0.42);
+  background: rgba(24, 27, 32, 0.98);
 }
 
 .icon-button:active,
@@ -263,7 +278,7 @@ input:hover {
 
 .field label {
   font-size: 0.78rem;
-  color: var(--muted);
+  color: #d5d9e2;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
@@ -274,12 +289,20 @@ input {
   width: 100%;
   padding: 12px 14px;
   outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 select:focus,
 input:focus {
-  border-color: rgba(142, 207, 135, 0.35);
-  box-shadow: 0 0 0 4px rgba(142, 207, 135, 0.08);
+  border-color: rgba(142, 207, 135, 0.6);
+  box-shadow:
+    0 0 0 4px rgba(142, 207, 135, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+select option {
+  background: #1b1d23;
+  color: var(--text);
 }
 
 .range-inline {
@@ -297,6 +320,7 @@ input:focus {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 18px;
   margin-top: 18px;
+  align-items: start;
 }
 
 .operational-panel {
@@ -315,10 +339,14 @@ input:focus {
   grid-column: span 4;
 }
 
+.quality-panel,
 .recent-alerts-panel,
-.active-alerts-panel,
-.explorer-panel {
+.active-alerts-panel {
   grid-column: span 4;
+}
+
+.explorer-panel {
+  grid-column: span 12;
 }
 
 .status-strip {
@@ -632,6 +660,10 @@ input:focus {
   gap: 12px;
 }
 
+.signal-stack {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
 .stack-item,
 .signal-item {
   position: relative;
@@ -686,6 +718,43 @@ input:focus {
   line-height: 1.5;
 }
 
+.scroll-area {
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 200, 93, 0.38) rgba(255, 255, 255, 0.06);
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(240, 200, 93, 0.55), rgba(142, 207, 135, 0.45));
+  border-radius: 999px;
+}
+
+.quality-area {
+  max-height: 260px;
+}
+
+.rules-area {
+  max-height: 320px;
+}
+
+.tall-area {
+  max-height: 720px;
+}
+
+.explorer-area {
+  max-height: 520px;
+}
+
 @media (max-width: 1400px) {
   .filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -695,6 +764,7 @@ input:focus {
   .score-panel,
   .trend-panel,
   .context-panel,
+  .quality-panel,
   .recent-alerts-panel,
   .active-alerts-panel,
   .explorer-panel {
@@ -719,7 +789,8 @@ input:focus {
   .kpi-grid,
   .context-grid,
   .score-grid,
-  .trend-summary-grid {
+  .trend-summary-grid,
+  .signal-stack {
     grid-template-columns: 1fr;
   }
 

@@ -137,13 +137,22 @@ DASHBOARD_HTML = """
             <p class="eyebrow">Leitura amigavel</p>
             <h2>Resumo atual</h2>
           </div>
-          <div class="panel-note">Valores e observacoes da ultima amostra.</div>
+          <div class="panel-note">Valores resumidos da ultima amostra e regras do indicador.</div>
         </div>
         <div class="context-grid" id="context-grid"></div>
-        <div class="stack-title">Observacoes de qualidade</div>
-        <div class="stack-list" id="quality-list"></div>
         <div class="stack-title">Meta e limites do indicador</div>
-        <div class="stack-list" id="rule-list"></div>
+        <div class="stack-list scroll-area rules-area" id="rule-list"></div>
+      </section>
+
+      <section class="panel quality-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Qualidade</p>
+            <h2>Observacoes da amostra</h2>
+          </div>
+          <div class="panel-note">Apontamentos de nulos, zeros anormais e sensores travados.</div>
+        </div>
+        <div class="stack-list scroll-area quality-area" id="quality-list"></div>
       </section>
 
       <section class="panel recent-alerts-panel">
@@ -154,7 +163,7 @@ DASHBOARD_HTML = """
           </div>
           <div class="panel-note" id="recent-count">0 eventos</div>
         </div>
-        <div class="stack-list" id="recent-alert-list"></div>
+        <div class="stack-list scroll-area tall-area" id="recent-alert-list"></div>
       </section>
 
       <section class="panel active-alerts-panel">
@@ -165,7 +174,7 @@ DASHBOARD_HTML = """
           </div>
           <div class="panel-note" id="active-count">0 alertas</div>
         </div>
-        <div class="stack-list" id="active-alert-list"></div>
+        <div class="stack-list scroll-area tall-area" id="active-alert-list"></div>
       </section>
 
       <section class="panel explorer-panel">
@@ -176,7 +185,7 @@ DASHBOARD_HTML = """
           </div>
           <div class="panel-note" id="signal-panel-note">Selecione qualquer linha para trocar o grafico.</div>
         </div>
-        <div class="signal-stack" id="signal-list"></div>
+        <div class="signal-stack scroll-area explorer-area" id="signal-list"></div>
       </section>
     </section>
   </main>
