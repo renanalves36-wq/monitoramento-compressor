@@ -1,0 +1,69 @@
+"""Testes para limites e referencias do grafico de tendencia."""
+
+from __future__ import annotations
+
+import unittest
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+from app.config import Settings
+from app.services.health_service import HealthService
+from app.storage.alert_repository import AlertRepository
+from app.utils.datetime_utils import utc_now
+
+
+class TrendLimitsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        settings = Settings(sqlite_path=Path("data/test_trend_limits.db"))
+        repository = AlertRepository(settings.sqlite_path)
+        self.service = HealthService(settings=settings, repository=repository)
+
+    def test_between_rule_is_preserved_as_operational_range(self) -> None:
+        lower_limit, upper_limit, target_value, rules = self.service._get_signal_limits_and_rules(
+            "pv_pres_sistema_bar"
+        )
+
+        self.assertEqual(lower_limit, 5.0)
+        self.assertEqual(upper_limit, 7.8)
+        self.assertIsNone(target_value)
+        self.assertTrue(any(rule.rule_id == "rede_pressao_alta" for rule in rules))
+        self.assertTrue(any(rule.rule_id == "pressao_sistema_fora_faixa" for rule in rules))
+
+    def test_target_current_uses_real_setpoint_signal(self) -> None:
+        start = datetime(2026, 4, 9, 7, 0, 0)
+        self.service._feature_frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": start,
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_pres_sistema_bar": 6.8,
+                    "sp_pres_sistema_bar": 6.6,
+                },
+                {
+                    "timestamp": start + timedelta(minutes=1),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_pres_sistema_bar": 7.0,
+                    "sp_pres_sistema_bar": 6.7,
+                },
+            ]
+        )
+        self.service._history_frame = self.service._feature_frame.copy()
+        self.service._last_refresh_at = utc_now()
+
+        response = self.service.get_signal_trend_window(
+            signal="pv_pres_sistema_bar",
+            range_value=2,
+            range_unit="points",
+            bucket="raw",
+        )
+
+        self.assertEqual(response.summary.target_current, 6.7)
+        self.assertEqual(response.target_signal, "sp_pres_sistema_bar")
+        self.assertEqual(response.lower_limit, 5.0)
+        self.assertEqual(response.upper_limit, 7.8)
+
+
+if __name__ == "__main__":
+    unittest.main()

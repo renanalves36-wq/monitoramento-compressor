@@ -123,7 +123,9 @@ DASHBOARD_HTML = """
         </div>
         <div class="legend-row">
           <span><i class="legend-line legend-actual"></i>Valor real</span>
-          <span><i class="legend-line legend-target"></i>Linha de meta</span>
+          <span><i class="legend-line legend-target"></i>Setpoint real</span>
+          <span><i class="legend-line legend-upper"></i>Limite superior</span>
+          <span><i class="legend-line legend-lower"></i>Limite inferior</span>
           <span><i class="legend-line legend-mean"></i>Media 15 min</span>
           <span><i class="legend-line legend-ewma"></i>EWMA</span>
           <span><i class="legend-dot legend-alert"></i>Eventos de alerta</span>

@@ -279,11 +279,16 @@ class HealthService:
             range_value=range_value,
             range_unit=range_unit,
         )
-        trend_frame = self._bucketize_trend_frame(
+        effective_bucket = bucket
+        bucketed_frame = self._bucketize_trend_frame(
             frame=trend_frame,
             signal=signal,
             bucket=bucket,
         )
+        if bucket != "raw" and bucketed_frame.empty and not trend_frame.empty:
+            bucketed_frame = trend_frame.reset_index(drop=True)
+            effective_bucket = "raw"
+        trend_frame = bucketed_frame
         if trend_frame.empty:
             return SignalTrendResponse(
                 signal=signal,
@@ -292,7 +297,7 @@ class HealthService:
                 unit=get_signal_unit(signal),
                 range_unit=range_unit,
                 range_value=range_value,
-                bucket=bucket,
+                bucket=effective_bucket,
             )
 
         lower_limit, upper_limit, target_value, rules = self._get_signal_limits_and_rules(signal)
@@ -319,9 +324,16 @@ class HealthService:
 
         latest_row = trend_frame.iloc[-1]
         previous_row = trend_frame.iloc[-2] if len(trend_frame) >= 2 else latest_row
+        current_target_value = target_value
+        if target_signal and target_signal in trend_frame.columns:
+            current_target_value = self._safe_float(latest_row.get(target_signal))
+            if current_target_value is None:
+                current_target_value = target_value
+
         summary = TrendSummary(
             latest=self._safe_float(latest_row.get(signal)),
             previous=self._safe_float(previous_row.get(signal)),
+            target_current=current_target_value,
             mean=self._safe_float(trend_frame[signal].mean()),
             minimum=self._safe_float(trend_frame[signal].min()),
             maximum=self._safe_float(trend_frame[signal].max()),
@@ -339,7 +351,7 @@ class HealthService:
             unit=get_signal_unit(signal),
             range_unit=range_unit,
             range_value=range_value,
-            bucket=bucket,
+            bucket=effective_bucket,
             count=len(points),
             target_signal=target_signal,
             target_label=target_label,
@@ -466,6 +478,10 @@ class HealthService:
         upper_limit: float | None = None
         target_value: float | None = None
         rules: list[TrendRuleSummary] = []
+        between_lower_candidates: list[float] = []
+        between_upper_candidates: list[float] = []
+        lower_threshold_candidates: list[float] = []
+        upper_threshold_candidates: list[float] = []
 
         for rule in self.alert_service.rules.get("fixed_rules", []):
             if rule.get("signal") != signal:
@@ -476,16 +492,16 @@ class HealthService:
             if condition == "between":
                 min_value = float(rule["min_value"])
                 max_value = float(rule["max_value"])
-                lower_limit = min_value if lower_limit is None else max(lower_limit, min_value)
-                upper_limit = max_value if upper_limit is None else min(upper_limit, max_value)
+                between_lower_candidates.append(min_value)
+                between_upper_candidates.append(max_value)
                 threshold_text = f"{min_value}..{max_value}"
             elif condition in {"gt", "gte"}:
                 candidate = float(rule["threshold"])
-                upper_limit = candidate if upper_limit is None else min(upper_limit, candidate)
+                upper_threshold_candidates.append(candidate)
                 threshold_text = f"{condition} {candidate}"
             elif condition in {"lt", "lte"}:
                 candidate = float(rule["threshold"])
-                lower_limit = candidate if lower_limit is None else max(lower_limit, candidate)
+                lower_threshold_candidates.append(candidate)
                 threshold_text = f"{condition} {candidate}"
 
             rules.append(
@@ -517,13 +533,18 @@ class HealthService:
                 )
             )
 
-        if signal not in TARGET_SIGNAL_BY_SIGNAL:
-            if lower_limit is not None and upper_limit is not None:
-                target_value = round((lower_limit + upper_limit) / 2.0, 3)
-            elif upper_limit is not None:
-                target_value = upper_limit
-            elif lower_limit is not None:
-                target_value = lower_limit
+        if between_lower_candidates:
+            lower_limit = max(between_lower_candidates)
+        elif lower_threshold_candidates:
+            lower_limit = max(lower_threshold_candidates)
+
+        if between_upper_candidates:
+            upper_limit = min(between_upper_candidates)
+        elif upper_threshold_candidates:
+            upper_limit = min(upper_threshold_candidates)
+
+        if signal in TARGET_SIGNAL_BY_SIGNAL:
+            target_value = None
 
         return lower_limit, upper_limit, target_value, rules
 

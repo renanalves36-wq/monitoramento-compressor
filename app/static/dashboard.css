@@ -626,6 +626,14 @@ select option {
   background: var(--yellow);
 }
 
+.legend-upper {
+  background: #f2a35d;
+}
+
+.legend-lower {
+  background: #8ecf87;
+}
+
 .legend-mean {
   background: var(--navy);
 }

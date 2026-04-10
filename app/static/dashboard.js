@@ -109,12 +109,12 @@ function formatDateTime(value) {
   return date.toLocaleString("pt-BR");
 }
 
-function formatAxisDate(value) {
+function formatAxisDate(value, rangeUnit = state.rangeUnit, bucket = state.trend?.bucket || state.bucket) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  const showDate = state.rangeUnit === "days" || state.bucket === "days";
-  const showOnlyTime = state.rangeUnit === "minutes" && state.bucket !== "days";
+  const showDate = rangeUnit === "days" || bucket === "days";
+  const showOnlyTime = rangeUnit === "minutes" && bucket !== "days";
   if (showDate) {
     return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   }
@@ -131,6 +131,40 @@ function formatAxisDate(value) {
 
 function getSignalMeta(signal) {
   return safeArray(state.catalog?.signals).find((item) => item.signal === signal) || null;
+}
+
+function getTargetLabel(signalMeta, fallback = "Setpoint") {
+  if (!signalMeta) return fallback;
+  return signalMeta.default_target_label || fallback;
+}
+
+function getTargetValue(signalMeta, values = {}, fallback = null) {
+  if (!signalMeta) return fallback;
+  if (signalMeta.default_target_signal) {
+    const currentTarget = values?.[signalMeta.default_target_signal];
+    if (currentTarget !== null && currentTarget !== undefined && currentTarget !== "") {
+      return currentTarget;
+    }
+  }
+  if (signalMeta.target_value !== null && signalMeta.target_value !== undefined) {
+    return signalMeta.target_value;
+  }
+  return fallback;
+}
+
+function formatOperatingRange(lowerLimit, upperLimit, unit = "") {
+  const lowerText = formatMaybe(lowerLimit, unit);
+  const upperText = formatMaybe(upperLimit, unit);
+  if ((lowerLimit === null || lowerLimit === undefined) && (upperLimit === null || upperLimit === undefined)) {
+    return "sem faixa configurada";
+  }
+  if (lowerLimit !== null && lowerLimit !== undefined && upperLimit !== null && upperLimit !== undefined) {
+    return `${lowerText} ate ${upperText}`;
+  }
+  if (lowerLimit !== null && lowerLimit !== undefined) {
+    return `a partir de ${lowerText}`;
+  }
+  return `ate ${upperText}`;
 }
 
 function getVisibleSignals() {
@@ -335,9 +369,8 @@ function renderOperationalPanel() {
     ? heroSignals.map((item) => {
         const activeCount = countAlertsForSignal(item.signal, activeAlerts);
         const unit = item.unit || "";
-        const lower = item.lower_limit === null || item.lower_limit === undefined ? "--" : formatMaybe(item.lower_limit, unit);
-        const upper = item.upper_limit === null || item.upper_limit === undefined ? "--" : formatMaybe(item.upper_limit, unit);
-        const target = item.target_value === null || item.target_value === undefined ? "--" : formatMaybe(item.target_value, unit);
+        const targetValue = getTargetValue(item, values);
+        const targetLabel = getTargetLabel(item);
         return `
           <div class="kpi-card ${activeCount ? "highlight" : ""}">
             <div class="stack-top">
@@ -347,8 +380,8 @@ function renderOperationalPanel() {
               </div>
               <span class="severity-pill ${activeCount ? "severity-high" : "severity-all"}">${activeCount} ativos</span>
             </div>
-            <div class="stack-meta">Meta: ${target}</div>
-            <div class="stack-meta">Faixa: ${lower} ate ${upper}</div>
+            <div class="stack-meta">${targetLabel}: ${formatMaybe(targetValue, unit)}</div>
+            <div class="stack-meta">Faixa operacional: ${formatOperatingRange(item.lower_limit, item.upper_limit, unit)}</div>
           </div>
         `;
       }).join("")
@@ -393,14 +426,17 @@ function renderContextPanel() {
   const trend = state.trend || {};
   const signalMeta = getSignalMeta(state.signal);
   const unit = signalMeta?.unit || trend.unit || "";
+  const targetLabel = trend.target_label || getTargetLabel(signalMeta);
+  const targetValue = trend.summary?.target_current ?? getTargetValue(signalMeta, values, trend.target_value);
 
   const cards = [
     ["Indicador principal", signalMeta?.label || "--"],
     ["Valor atual", formatMaybe(trend.summary?.latest, unit)],
-    ["Meta atual", formatMaybe(trend.summary?.target_current ?? trend.target_value, unit)],
+    [targetLabel, formatMaybe(targetValue, unit)],
+    ["Limite inferior", formatMaybe(trend.lower_limit, unit)],
+    ["Limite superior", formatMaybe(trend.upper_limit, unit)],
     ["Turno", values.ds_turno || "--"],
     ["PLC", String(values.st_plc ?? "--")],
-    ["Status", String(values.status ?? "--")],
   ];
   document.getElementById("context-grid").innerHTML = cards.map(([label, value]) => `
     <div class="context-card">
@@ -496,6 +532,8 @@ function renderSignalExplorer() {
         const values = state.snapshot?.values || {};
         const activeCount = countAlertsForSignal(item.signal, safeArray(state.activeAlerts));
         const recentCount = countAlertsForSignal(item.signal, safeArray(state.recentAlerts));
+        const targetValue = getTargetValue(item, values);
+        const targetLabel = getTargetLabel(item);
         return `
           <div class="signal-item ${state.signal === item.signal ? "active" : ""}" data-signal="${item.signal}">
             <div class="signal-top">
@@ -509,7 +547,7 @@ function renderSignalExplorer() {
             </div>
             <div class="signal-meta">${friendlySubsystem(item.subsystem)} | ${item.signal}</div>
             <div class="signal-footer">
-              Meta: ${formatMaybe(item.target_value, item.unit || "")} | Limites: ${formatMaybe(item.lower_limit, item.unit || "")} ate ${formatMaybe(item.upper_limit, item.unit || "")}
+              ${targetLabel}: ${formatMaybe(targetValue, item.unit || "")} | Faixa: ${formatOperatingRange(item.lower_limit, item.upper_limit, item.unit || "")}
             </div>
           </div>
         `;
@@ -527,11 +565,12 @@ function renderTrendSummary() {
   const trend = state.trend || {};
   const summary = trend.summary || {};
   const unit = trend.unit || "";
+  const targetLabel = trend.target_label || "Setpoint";
   const cards = [
     ["Valor atual", formatMaybe(summary.latest, unit)],
-    ["Media da janela", formatMaybe(summary.mean, unit)],
-    ["Minimo", formatMaybe(summary.minimum, unit)],
-    ["Maximo", formatMaybe(summary.maximum, unit)],
+    [targetLabel, formatMaybe(summary.target_current ?? trend.target_value, unit)],
+    ["Limite inferior", formatMaybe(trend.lower_limit, unit)],
+    ["Limite superior", formatMaybe(trend.upper_limit, unit)],
     ["Tendencia 15 min", formatMaybe(summary.slope_15m, unit ? `${unit}/min` : "")],
     ["Z-score 1h", formatMaybe(summary.zscore_1h)],
   ];
@@ -577,7 +616,7 @@ function renderChart() {
 
   const unit = trend.unit || "";
   title.textContent = `${trend.label} (${trend.signal})`;
-  subtitle.textContent = `${friendlySubsystem(trend.subsystem)} | ${points.length} pontos | janela: ${state.rangeValue} ${state.rangeUnit} | agrupamento: ${state.bucket}`;
+  subtitle.textContent = `${friendlySubsystem(trend.subsystem)} | ${points.length} pontos | janela: ${trend.range_value} ${trend.range_unit} | agrupamento: ${trend.bucket}`;
 
   const width = 960;
   const height = 430;
@@ -586,6 +625,13 @@ function renderChart() {
   const plotHeight = height - margin.top - margin.bottom;
 
   const timestamps = points.map((point) => new Date(point.timestamp).getTime()).filter(Number.isFinite);
+  if (!timestamps.length) {
+    title.textContent = `${trend.label} (${trend.signal})`;
+    subtitle.textContent = "Nao foi possivel interpretar os timestamps retornados para a serie temporal.";
+    svg.innerHTML = "";
+    tooltip.classList.remove("visible");
+    return;
+  }
   const minTs = Math.min(...timestamps);
   const maxTs = Math.max(...timestamps);
   const xScale = (value) => {
@@ -627,6 +673,8 @@ function renderChart() {
     meanY: point.rolling_mean === null || point.rolling_mean === undefined ? null : yScale(Number(point.rolling_mean)),
     ewmaY: point.ewma === null || point.ewma === undefined ? null : yScale(Number(point.ewma)),
     targetY: point.target_value === null || point.target_value === undefined ? null : yScale(Number(point.target_value)),
+    lowerY: point.lower_limit === null || point.lower_limit === undefined ? null : yScale(Number(point.lower_limit)),
+    upperY: point.upper_limit === null || point.upper_limit === undefined ? null : yScale(Number(point.upper_limit)),
   }));
 
   const gridLines = [];
@@ -644,7 +692,7 @@ function renderChart() {
     const ts = minTs + ((maxTs - minTs) / 4) * index;
     const x = xScale(ts);
     xTicks.push(`
-      <text x="${x}" y="${height - 14}" fill="rgba(168,173,184,0.95)" font-size="12" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">${formatAxisDate(ts)}</text>
+      <text x="${x}" y="${height - 14}" fill="rgba(168,173,184,0.95)" font-size="12" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">${formatAxisDate(ts, trend.range_unit, trend.bucket)}</text>
     `);
   }
 
@@ -666,6 +714,8 @@ function renderChart() {
   const meanPath = buildPath(chartPoints, "x", "meanY");
   const ewmaPath = buildPath(chartPoints, "x", "ewmaY");
   const targetPath = buildPath(chartPoints, "x", "targetY");
+  const lowerPath = buildPath(chartPoints, "x", "lowerY");
+  const upperPath = buildPath(chartPoints, "x", "upperY");
 
   const markerAlerts = getSelectedSignalAlerts().filter((alert) => {
     const ts = new Date(alert.last_seen_at).getTime();
@@ -694,6 +744,8 @@ function renderChart() {
     <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="rgba(255,255,255,0.12)" />
     ${markerMarkup}
     <path d="${targetPath}" fill="none" stroke="#f0c85d" stroke-width="2.2" stroke-dasharray="9 7" stroke-linecap="round" />
+    <path d="${upperPath}" fill="none" stroke="#f2a35d" stroke-width="1.9" stroke-dasharray="4 6" stroke-linecap="round" />
+    <path d="${lowerPath}" fill="none" stroke="#8ecf87" stroke-width="1.9" stroke-dasharray="4 6" stroke-linecap="round" />
     <path d="${meanPath}" fill="none" stroke="#153150" stroke-width="2.5" stroke-linecap="round" />
     <path d="${ewmaPath}" fill="none" stroke="#c26e23" stroke-width="2.3" stroke-dasharray="6 6" stroke-linecap="round" />
     <path d="${actualPath}" fill="none" stroke="#23a39c" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
@@ -719,9 +771,11 @@ function renderChart() {
     tooltip.innerHTML = `
       <div><strong>${formatDateTime(nearest.timestamp)}</strong></div>
       <div>Valor real: ${formatMaybe(nearest.value, unit)}</div>
+      <div>${trend.target_label || "Setpoint"}: ${formatMaybe(nearest.target_value, unit)}</div>
+      <div>Limite inferior: ${formatMaybe(nearest.lower_limit, unit)}</div>
+      <div>Limite superior: ${formatMaybe(nearest.upper_limit, unit)}</div>
       <div>Media 15 min: ${formatMaybe(nearest.rolling_mean, unit)}</div>
       <div>EWMA: ${formatMaybe(nearest.ewma, unit)}</div>
-      <div>${trend.target_label || "Meta"}: ${formatMaybe(nearest.target_value, unit)}</div>
       <div>Eventos no ponto: ${formatNumber(nearbyAlerts.length, 0)}</div>
     `;
     tooltip.style.left = `${event.clientX - bounds.left}px`;
