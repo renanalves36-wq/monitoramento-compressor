@@ -158,6 +158,8 @@ class IngestionService:
         filtered_buffer = pd.DataFrame()
         fallback_buffer = pd.DataFrame()
         matched_any = False
+        rows_seen = 0
+        rows_with_valid_timestamp = 0
         delimiter = self._detect_csv_delimiter(demo_path)
 
         reader = pd.read_csv(
@@ -170,6 +172,7 @@ class IngestionService:
         )
 
         for chunk in reader:
+            rows_seen += len(chunk)
             chunk = self._standardize_demo_chunk(chunk)
             if "timestamp" not in chunk.columns:
                 available_columns = ", ".join(map(str, chunk.columns.tolist()[:12]))
@@ -181,6 +184,7 @@ class IngestionService:
             chunk = chunk.dropna(subset=["timestamp"])
             if chunk.empty:
                 continue
+            rows_with_valid_timestamp += len(chunk)
 
             concatenated = pd.concat([fallback_buffer, chunk], ignore_index=True)
             if row_budget is None:
@@ -213,6 +217,16 @@ class IngestionService:
 
         if incremental:
             return pd.DataFrame()
+
+        if rows_seen > 0 and rows_with_valid_timestamp == 0:
+            self.logger.warning(
+                "demo_csv_timestamp_parse_failed",
+                extra={
+                    "demo_csv_path": str(demo_path),
+                    "rows_seen": int(rows_seen),
+                    "delimiter_detected": delimiter,
+                },
+            )
 
         if row_budget is None:
             return fallback_buffer.sort_values("timestamp").reset_index(drop=True)
@@ -252,12 +266,43 @@ class IngestionService:
         )
 
         if "timestamp" in chunk.columns:
-            chunk["timestamp"] = pd.to_datetime(
-                chunk["timestamp"],
-                errors="coerce",
-                dayfirst=True,
-            )
+            chunk["timestamp"] = IngestionService._parse_demo_timestamps(chunk["timestamp"])
         return chunk
+
+    @staticmethod
+    def _parse_demo_timestamps(series: pd.Series) -> pd.Series:
+        values = series.astype("string").str.strip()
+        parsed = pd.to_datetime(
+            values,
+            format="%d/%m/%Y %H:%M:%S",
+            errors="coerce",
+        )
+
+        missing_mask = parsed.isna()
+        if missing_mask.any():
+            parsed.loc[missing_mask] = pd.to_datetime(
+                values.loc[missing_mask],
+                format="%Y-%m-%d %H:%M:%S",
+                errors="coerce",
+            )
+
+        missing_mask = parsed.isna()
+        if missing_mask.any():
+            parsed.loc[missing_mask] = pd.to_datetime(
+                values.loc[missing_mask],
+                dayfirst=True,
+                errors="coerce",
+            )
+
+        missing_mask = parsed.isna()
+        if missing_mask.any():
+            parsed.loc[missing_mask] = pd.to_datetime(
+                values.loc[missing_mask],
+                dayfirst=False,
+                errors="coerce",
+            )
+
+        return parsed
 
     @staticmethod
     def _row_to_dict(row: Any, columns: list[str]) -> dict[str, Any]:
@@ -276,7 +321,7 @@ class IngestionService:
         issues: list[DataQualityIssue] = []
         clean = frame.copy()
 
-        clean["timestamp"] = pd.to_datetime(clean["timestamp"], errors="coerce", dayfirst=True)
+        clean["timestamp"] = self._parse_demo_timestamps(clean["timestamp"])
         invalid_ts = clean["timestamp"].isna().sum()
         if invalid_ts:
             issues.append(

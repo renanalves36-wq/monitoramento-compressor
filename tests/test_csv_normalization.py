@@ -30,6 +30,19 @@ class CsvNormalizationTests(unittest.TestCase):
         self.assertIn("status", normalized.columns)
         self.assertTrue(pd.notna(normalized.loc[0, "timestamp"]))
 
+    def test_parse_demo_timestamps_accepts_multiple_formats(self) -> None:
+        values = pd.Series(
+            [
+                "09/04/2026 16:30:51",
+                "2026-04-09 16:30:51",
+                "04/09/2026 16:30:51",
+            ]
+        )
+
+        parsed = IngestionService._parse_demo_timestamps(values)
+
+        self.assertTrue(parsed.notna().all())
+
 
 if __name__ == "__main__":
     unittest.main()

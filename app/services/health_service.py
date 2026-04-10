@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from threading import Lock
 from typing import Any
 
 import pandas as pd
@@ -55,6 +56,7 @@ class HealthService:
         self._alert_events = []
         self._last_refresh_at: datetime | None = None
         self._data_source = "unknown"
+        self._refresh_lock = Lock()
 
     def refresh(self, force: bool = False) -> None:
         if not force and self._last_refresh_at:
@@ -62,10 +64,16 @@ class HealthService:
             if age < self.settings.cache_ttl_seconds:
                 return
 
-        try:
-            self._run_cycle()
-        except Exception as exc:  # pragma: no cover - seguranca operacional
-            self.logger.exception("refresh_failed", extra={"error": str(exc)})
+        with self._refresh_lock:
+            if not force and self._last_refresh_at:
+                age = (utc_now() - self._last_refresh_at).total_seconds()
+                if age < self.settings.cache_ttl_seconds:
+                    return
+
+            try:
+                self._run_cycle()
+            except Exception as exc:  # pragma: no cover - seguranca operacional
+                self.logger.exception("refresh_failed", extra={"error": str(exc)})
 
     def _run_cycle(self) -> None:
         batch = self._load_batch()
