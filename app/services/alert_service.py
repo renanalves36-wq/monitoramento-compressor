@@ -17,6 +17,7 @@ from app.domain.mappings import (
     ZERO_ABNORMAL_SIGNALS,
 )
 from app.domain.schemas import AlertRecord, DataQualityIssue, SubsystemRiskScore
+from app.services.prescriptive_service import PrescriptiveService
 
 
 class AlertService:
@@ -32,6 +33,7 @@ class AlertService:
     def __init__(self, rules_path: Path) -> None:
         self.rules_path = rules_path
         self.rules = self._load_rules()
+        self.prescriptive_service = PrescriptiveService()
 
     def _load_rules(self) -> dict[str, Any]:
         with self.rules_path.open("r", encoding="utf-8") as file_obj:
@@ -85,6 +87,7 @@ class AlertService:
                     open_event.metadata = alert.metadata
                     open_event.threshold = alert.threshold
                     open_event.mode_key = alert.mode_key
+                    open_event.prescriptive_diagnosis = alert.prescriptive_diagnosis
                     continue
                 open_events[alert_id] = alert.model_copy()
 
@@ -145,7 +148,21 @@ class AlertService:
                 quality_issues=quality_issues,
             )
         )
-        return list({alert.alert_id: alert for alert in alerts}.values())
+        deduplicated_alerts = list({alert.alert_id: alert for alert in alerts}.values())
+        for alert in deduplicated_alerts:
+            if not alert.signal or not self.prescriptive_service.supports(alert.signal):
+                continue
+            alert.prescriptive_diagnosis = self.prescriptive_service.generate_prescriptive_diagnosis(
+                variavel_principal=alert.signal,
+                snapshot=latest,
+                features=latest,
+                contexto_operacional={
+                    "mode_key": mode_key,
+                    "st_oper": latest.get("st_oper"),
+                    "st_carga_oper": latest.get("st_carga_oper"),
+                },
+            )
+        return deduplicated_alerts
 
     def _evaluate_fixed_rules(
         self, latest: pd.Series, current_ts: datetime, mode_key: str

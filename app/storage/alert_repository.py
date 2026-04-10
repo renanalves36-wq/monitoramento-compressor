@@ -6,7 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.domain.schemas import AlertRecord
+from app.domain.schemas import AlertRecord, PrescriptiveDiagnosis
 
 
 class AlertRepository:
@@ -46,6 +46,11 @@ class AlertRepository:
             connection.execute("UPDATE alerts SET is_active = 0")
 
             for alert in alerts:
+                metadata_payload = dict(alert.metadata)
+                if alert.prescriptive_diagnosis is not None:
+                    metadata_payload["prescriptive_diagnosis"] = (
+                        alert.prescriptive_diagnosis.model_dump()
+                    )
                 connection.execute(
                     """
                     INSERT INTO alerts (
@@ -91,7 +96,7 @@ class AlertRepository:
                         None if alert.current_value is None else str(alert.current_value),
                         alert.threshold,
                         alert.mode_key,
-                        json.dumps(alert.metadata, ensure_ascii=True),
+                        json.dumps(metadata_payload, ensure_ascii=True),
                     ),
                 )
 
@@ -127,6 +132,8 @@ class AlertRepository:
 
         alerts: list[AlertRecord] = []
         for row in rows:
+            metadata_payload = json.loads(row["metadata_json"] or "{}")
+            diagnosis_payload = metadata_payload.pop("prescriptive_diagnosis", None)
             alerts.append(
                 AlertRecord(
                     alert_id=row["alert_id"],
@@ -143,7 +150,12 @@ class AlertRepository:
                     threshold=row["threshold"],
                     mode_key=row["mode_key"],
                     is_active=bool(row["is_active"]),
-                    metadata=json.loads(row["metadata_json"] or "{}"),
+                    metadata=metadata_payload,
+                    prescriptive_diagnosis=(
+                        None
+                        if diagnosis_payload is None
+                        else PrescriptiveDiagnosis.model_validate(diagnosis_payload)
+                    ),
                 )
             )
         return alerts

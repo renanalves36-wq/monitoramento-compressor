@@ -59,6 +59,13 @@ class AlertServiceTests(unittest.TestCase):
         self.assertGreaterEqual(len(alerts), 2)
         self.assertTrue(any(alert.rule_id == "pressao_sistema_fora_faixa" for alert in alerts))
         self.assertTrue(any(alert.rule_id == "temperatura_estagio_3_zerada" for alert in alerts))
+        self.assertTrue(
+            any(
+                alert.signal == "pv_pres_sistema_bar"
+                and alert.prescriptive_diagnosis is not None
+                for alert in alerts
+            )
+        )
         self.assertTrue(any(score.subsystem == "ar_processo" and score.score > 0 for score in scores))
 
 

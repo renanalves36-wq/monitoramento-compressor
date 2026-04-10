@@ -16,6 +16,24 @@ class DataQualityIssue(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class PrescriptiveHypothesis(BaseModel):
+    causa: str
+    tipo: str
+    score: int
+
+
+class PrescriptiveDiagnosis(BaseModel):
+    variavel_principal: str
+    subsistema: str
+    flags_ativas: list[str] = Field(default_factory=list)
+    score_interno: int = 0
+    score_periferico: int = 0
+    hipoteses: list[PrescriptiveHypothesis] = Field(default_factory=list)
+    acoes_recomendadas: list[str] = Field(default_factory=list)
+    criticidade_base: str
+    observacoes: list[str] = Field(default_factory=list)
+
+
 class AlertRecord(BaseModel):
     alert_id: str
     rule_id: str
@@ -32,6 +50,7 @@ class AlertRecord(BaseModel):
     mode_key: str
     is_active: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
+    prescriptive_diagnosis: PrescriptiveDiagnosis | None = None
 
 
 class SubsystemRiskScore(BaseModel):
