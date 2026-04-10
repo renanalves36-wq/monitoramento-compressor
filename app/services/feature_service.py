@@ -30,12 +30,42 @@ class FeatureService:
             if extra_signal in features.columns and extra_signal not in candidate_signals:
                 candidate_signals.append(extra_signal)
 
+        feature_columns: dict[str, pd.Series] = {}
         for signal in candidate_signals:
-            features = self._append_signal_features(features, signal)
+            feature_columns.update(self._compute_signal_feature_columns(features, signal))
+
+        if feature_columns:
+            features = pd.concat(
+                [features, pd.DataFrame(feature_columns, index=features.index)],
+                axis=1,
+            )
 
         return features
 
-    def _append_signal_features(self, frame: pd.DataFrame, signal: str) -> pd.DataFrame:
+    def _compute_signal_feature_columns(
+        self, frame: pd.DataFrame, signal: str
+    ) -> dict[str, pd.Series]:
+        feature_names = [
+            f"{signal}__ma_5m",
+            f"{signal}__ma_15m",
+            f"{signal}__ma_1h",
+            f"{signal}__std_15m",
+            f"{signal}__std_1h",
+            f"{signal}__min_15m",
+            f"{signal}__max_15m",
+            f"{signal}__min_1h",
+            f"{signal}__max_1h",
+            f"{signal}__slope_15m",
+            f"{signal}__slope_1h",
+            f"{signal}__zscore_1h",
+            f"{signal}__ewma",
+            f"{signal}__ewma_gap_abs",
+        ]
+        feature_arrays = {
+            feature_name: np.full(len(frame), np.nan, dtype=float)
+            for feature_name in feature_names
+        }
+
         for _, segment in frame.groupby("mode_segment_id", sort=False):
             segment_index = segment.index
             segment_series = (
@@ -90,9 +120,13 @@ class FeatureService:
             }
 
             for feature_name, series in signal_features.items():
-                frame.loc[segment_index, feature_name] = series.to_numpy()
+                aligned = series.reindex(segment_series.index).to_numpy(dtype=float, copy=False)
+                feature_arrays[feature_name][segment_index.to_numpy()] = aligned
 
-        return frame
+        return {
+            feature_name: pd.Series(values, index=frame.index)
+            for feature_name, values in feature_arrays.items()
+        }
 
     def _compute_slopes(
         self,

@@ -32,6 +32,10 @@ const OVERVIEW_SIGNALS = [
   "pv_corr_motor_a",
 ];
 
+const CHART_COLORS = ["#39c7c2", "#f0c75a", "#6fa3ff", "#f29a56", "#79d08e", "#f16d6d"];
+const MAX_CHART_SIGNALS = 4;
+const RECENT_ALERT_FETCH_LIMIT = 5000;
+
 const state = {
   catalog: null,
   status: null,
@@ -39,10 +43,11 @@ const state = {
   scores: [],
   activeAlerts: [],
   recentAlerts: [],
-  trend: null,
+  trends: null,
   subsystem: "all",
   severity: "all",
   signal: null,
+  selectedSignals: [],
   rangeValue: 24,
   rangeUnit: "hours",
   bucket: "hours",
@@ -66,24 +71,24 @@ function friendlySubsystem(value) {
   return SUBSYSTEM_LABELS[value] || String(value || "--");
 }
 
-function severityClass(severity) {
-  return `severity-${String(severity || "all").toLowerCase()}`;
-}
-
 function severityLabel(severity) {
   return SEVERITY_LABELS[String(severity || "all").toLowerCase()] || String(severity || "--");
 }
 
+function severityClass(severity) {
+  return `severity-${String(severity || "all").toLowerCase()}`;
+}
+
 function severityWeight(severity) {
-  const table = { low: 1, medium: 2, high: 3, critical: 4 };
-  return table[String(severity || "").toLowerCase()] || 0;
+  const map = { low: 1, medium: 2, high: 3, critical: 4 };
+  return map[String(severity || "").toLowerCase()] || 0;
 }
 
 function scoreColor(score) {
-  if (score >= 80) return "#f26969";
-  if (score >= 60) return "#ef9a58";
-  if (score >= 35) return "#f0c85d";
-  return "#8ecf87";
+  if (score >= 80) return "#f16d6d";
+  if (score >= 60) return "#f29a56";
+  if (score >= 35) return "#f0c75a";
+  return "#79d08e";
 }
 
 function formatNumber(value, digits = null) {
@@ -109,7 +114,7 @@ function formatDateTime(value) {
   return date.toLocaleString("pt-BR");
 }
 
-function formatAxisDate(value, rangeUnit = state.rangeUnit, bucket = state.trend?.bucket || state.bucket) {
+function formatAxisDate(value, rangeUnit = state.rangeUnit, bucket = state.bucket) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
@@ -131,6 +136,81 @@ function formatAxisDate(value, rangeUnit = state.rangeUnit, bucket = state.trend
 
 function getSignalMeta(signal) {
   return safeArray(state.catalog?.signals).find((item) => item.signal === signal) || null;
+}
+
+function getVisibleSignals() {
+  const signals = safeArray(state.catalog?.signals);
+  const filtered = state.subsystem === "all"
+    ? signals
+    : signals.filter((item) => item.subsystem === state.subsystem);
+
+  return filtered
+    .filter((item) => {
+      if (!state.search) return true;
+      const haystack = `${item.label} ${item.signal} ${friendlySubsystem(item.subsystem)}`.toLowerCase();
+      return haystack.includes(state.search.toLowerCase());
+    })
+    .sort((left, right) => {
+      if (right.active_alerts !== left.active_alerts) return right.active_alerts - left.active_alerts;
+      if (Number(right.is_setpoint) !== Number(left.is_setpoint)) return Number(left.is_setpoint) - Number(right.is_setpoint);
+      return left.label.localeCompare(right.label, "pt-BR");
+    });
+}
+
+function getCatalogSignals() {
+  return safeArray(state.catalog?.signals).map((item) => item.signal);
+}
+
+function ensureSignalSelection() {
+  const visible = getVisibleSignals();
+  const allSignals = safeArray(state.catalog?.signals);
+  if (!allSignals.length) {
+    state.signal = null;
+    state.selectedSignals = [];
+    return;
+  }
+
+  const currentVisible = visible.some((item) => item.signal === state.signal);
+  const currentKnown = allSignals.some((item) => item.signal === state.signal);
+  if (!state.signal || !currentKnown || (state.subsystem !== "all" && !currentVisible)) {
+    const nextSignal = visible.find((item) => item.active_alerts > 0) || visible[0] || allSignals[0];
+    state.signal = nextSignal.signal;
+  }
+
+  const availableSignals = new Set(getCatalogSignals());
+  const nextSelected = [state.signal, ...state.selectedSignals.filter((signal) => signal !== state.signal)];
+  state.selectedSignals = nextSelected
+    .filter((signal, index) => availableSignals.has(signal) && nextSelected.indexOf(signal) === index)
+    .slice(0, MAX_CHART_SIGNALS);
+
+  if (!state.selectedSignals.length && state.signal) {
+    state.selectedSignals = [state.signal];
+  }
+}
+
+function isChartSignal(signal) {
+  return state.selectedSignals.includes(signal);
+}
+
+function setPrimarySignal(signal, subsystem = null) {
+  if (subsystem) {
+    state.subsystem = subsystem;
+  }
+  state.signal = signal;
+  ensureSignalSelection();
+}
+
+function toggleChartSignal(signal) {
+  if (!signal || signal === state.signal) return;
+  if (state.selectedSignals.includes(signal)) {
+    state.selectedSignals = state.selectedSignals.filter((item) => item !== signal);
+    return;
+  }
+  if (state.selectedSignals.length >= MAX_CHART_SIGNALS) {
+    state.selectedSignals = [state.signal, ...state.selectedSignals.slice(1, MAX_CHART_SIGNALS - 1), signal];
+    return;
+  }
+  state.selectedSignals = [...state.selectedSignals, signal];
 }
 
 function getTargetLabel(signalMeta, fallback = "Setpoint") {
@@ -167,30 +247,12 @@ function formatOperatingRange(lowerLimit, upperLimit, unit = "") {
   return `ate ${upperText}`;
 }
 
-function getVisibleSignals() {
-  const signals = safeArray(state.catalog?.signals);
-  const filtered = state.subsystem === "all"
-    ? signals
-    : signals.filter((item) => item.subsystem === state.subsystem);
-
-  return filtered
-    .filter((item) => {
-      if (!state.search) return true;
-      const haystack = `${item.label} ${item.signal} ${friendlySubsystem(item.subsystem)}`.toLowerCase();
-      return haystack.includes(state.search.toLowerCase());
-    })
-    .sort((left, right) => {
-      if (right.active_alerts !== left.active_alerts) return right.active_alerts - left.active_alerts;
-      return left.label.localeCompare(right.label, "pt-BR");
-    });
-}
-
 function countAlertsForSignal(signal, alerts) {
   return alerts.filter((alert) => alert.signal === signal).length;
 }
 
 function getPreferredSignals() {
-  const visible = getVisibleSignals();
+  const visible = getVisibleSignals().filter((item) => !item.is_setpoint);
   if (state.subsystem === "all") {
     const overview = OVERVIEW_SIGNALS
       .map((signal) => visible.find((item) => item.signal === signal))
@@ -198,17 +260,6 @@ function getPreferredSignals() {
     if (overview.length) return overview.slice(0, 4);
   }
   return visible.slice(0, 4);
-}
-
-function ensureSignalSelection() {
-  const visible = getVisibleSignals();
-  if (!visible.length) {
-    state.signal = null;
-    return;
-  }
-  if (visible.some((item) => item.signal === state.signal)) return;
-  const withActive = visible.find((item) => item.active_alerts > 0);
-  state.signal = (withActive || visible[0]).signal;
 }
 
 function alertMatchesFilters(alert) {
@@ -219,14 +270,16 @@ function alertMatchesFilters(alert) {
   return matchesSubsystem && matchesSeverity && matchesSearch;
 }
 
+function sortAlerts(alerts) {
+  return alerts.sort((left, right) => {
+    const severityDelta = severityWeight(right.severity) - severityWeight(left.severity);
+    if (severityDelta !== 0) return severityDelta;
+    return new Date(right.last_seen_at) - new Date(left.last_seen_at);
+  });
+}
+
 function getFilteredActiveAlerts() {
-  return safeArray(state.activeAlerts)
-    .filter((alert) => alertMatchesFilters(alert))
-    .sort((left, right) => {
-      const severityDelta = severityWeight(right.severity) - severityWeight(left.severity);
-      if (severityDelta !== 0) return severityDelta;
-      return new Date(right.last_seen_at) - new Date(left.last_seen_at);
-    });
+  return sortAlerts(safeArray(state.activeAlerts).filter((alert) => alertMatchesFilters(alert)));
 }
 
 function getFilteredRecentAlerts() {
@@ -236,11 +289,45 @@ function getFilteredRecentAlerts() {
     .sort((left, right) => new Date(right.last_seen_at) - new Date(left.last_seen_at));
 }
 
-function getSelectedSignalAlerts() {
-  const alerts = safeArray(state.recentAlerts).filter(
-    (alert) => alert.signal === state.signal && alertMatchesFilters(alert)
-  );
-  return alerts.sort((left, right) => new Date(right.last_seen_at) - new Date(left.last_seen_at));
+function getSignalAlertEvents(signal) {
+  const merged = [...safeArray(state.activeAlerts), ...safeArray(state.recentAlerts)];
+  const unique = [];
+  const seen = new Set();
+  merged.forEach((alert) => {
+    if (alert.signal !== signal || !alertMatchesFilters(alert)) return;
+    const key = `${alert.alert_id}-${alert.last_seen_at}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(alert);
+  });
+  return unique.sort((left, right) => new Date(right.last_seen_at) - new Date(left.last_seen_at));
+}
+
+function getDiagnosisAlert() {
+  const candidates = [
+    ...getFilteredActiveAlerts().filter((alert) => alert.signal === state.signal && alert.prescriptive_diagnosis),
+    ...getFilteredRecentAlerts().filter((alert) => alert.signal === state.signal && alert.prescriptive_diagnosis),
+  ];
+  if (candidates.length) return candidates[0];
+
+  const subsystemFallback = [
+    ...getFilteredActiveAlerts().filter((alert) => alert.subsystem === state.subsystem && alert.prescriptive_diagnosis),
+    ...getFilteredRecentAlerts().filter((alert) => alert.subsystem === state.subsystem && alert.prescriptive_diagnosis),
+  ];
+  return subsystemFallback[0] || null;
+}
+
+function getTrendSeries(signal) {
+  return safeArray(state.trends?.series).find((item) => item.signal === signal) || null;
+}
+
+function getPrimaryTrend() {
+  return getTrendSeries(state.signal) || safeArray(state.trends?.series)[0] || null;
+}
+
+function colorForSignal(signal) {
+  const index = state.selectedSignals.indexOf(signal);
+  return CHART_COLORS[index >= 0 ? index % CHART_COLORS.length : 0];
 }
 
 function syncFilterInputs() {
@@ -248,48 +335,19 @@ function syncFilterInputs() {
   document.getElementById("range-value").value = String(state.rangeValue);
   document.getElementById("range-unit").value = state.rangeUnit;
   document.getElementById("bucket-select").value = state.bucket;
-  const signalSelect = document.getElementById("signal-select");
-  if (state.signal) signalSelect.value = state.signal;
-}
-
-function setTrendLoading() {
-  document.getElementById("trend-title").textContent = "Atualizando grafico...";
-  document.getElementById("trend-subtitle").textContent = "Buscando nova serie temporal para o indicador selecionado.";
-  document.getElementById("trend-chart").innerHTML = "";
-  document.getElementById("chart-tooltip").classList.remove("visible");
-}
-
-async function focusSignal(signal, subsystem = null) {
-  if (subsystem) {
-    state.subsystem = subsystem;
+  if (state.signal) {
+    document.getElementById("signal-select").value = state.signal;
   }
-  state.signal = signal;
-  ensureSignalSelection();
-  renderAll();
-  setTrendLoading();
-  await loadTrend();
 }
 
 function renderSubsystemPills() {
   const container = document.getElementById("subsystem-pills");
   const subsystems = ["all", ...safeArray(state.catalog?.subsystems)];
-  container.innerHTML = subsystems
-    .map((subsystem) => `
-      <button class="pill-button ${state.subsystem === subsystem ? "active" : ""}" data-subsystem="${subsystem}" type="button">
-        ${friendlySubsystem(subsystem)}
-      </button>
-    `)
-    .join("");
-
-  container.querySelectorAll("[data-subsystem]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.subsystem = button.dataset.subsystem;
-      ensureSignalSelection();
-      renderAll();
-      setTrendLoading();
-      await loadTrend();
-    });
-  });
+  container.innerHTML = subsystems.map((subsystem) => `
+    <button class="pill-button ${state.subsystem === subsystem ? "active" : ""}" data-subsystem="${subsystem}" type="button">
+      ${friendlySubsystem(subsystem)}
+    </button>
+  `).join("");
 }
 
 function renderPresetButtons() {
@@ -302,26 +360,14 @@ function renderPresetButtons() {
       </button>
     `;
   }).join("");
-
-  container.querySelectorAll("[data-range-value]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      state.rangeValue = Number(button.dataset.rangeValue);
-      state.rangeUnit = button.dataset.rangeUnit;
-      state.bucket = button.dataset.bucket;
-      syncFilterInputs();
-      renderPresetButtons();
-      setTrendLoading();
-      await loadTrend();
-    });
-  });
 }
 
 function populateSelects() {
   const signalSelect = document.getElementById("signal-select");
-  const visibleSignals = getVisibleSignals();
-  signalSelect.innerHTML = visibleSignals.map((item) => `
-    <option value="${item.signal}">${item.label} (${friendlySubsystem(item.subsystem)})</option>
-  `).join("");
+  signalSelect.innerHTML = getVisibleSignals().map((item) => {
+    const suffix = item.is_setpoint ? " [meta]" : item.is_derived ? " [calculado]" : "";
+    return `<option value="${item.signal}">${item.label}${suffix} (${friendlySubsystem(item.subsystem)})</option>`;
+  }).join("");
 
   const severitySelect = document.getElementById("severity-select");
   severitySelect.innerHTML = safeArray(state.catalog?.severities)
@@ -331,6 +377,27 @@ function populateSelects() {
   syncFilterInputs();
 }
 
+function renderSelectedSignals() {
+  const container = document.getElementById("selected-signals");
+  if (!state.selectedSignals.length) {
+    container.innerHTML = '<div class="empty-state">Nenhum indicador foi selecionado para o grafico.</div>';
+    return;
+  }
+
+  container.innerHTML = state.selectedSignals.map((signal, index) => {
+    const meta = getSignalMeta(signal);
+    const label = meta?.label || signal;
+    const prefix = index === 0 ? "principal" : "correlacao";
+    return `
+      <button class="selection-chip ${index === 0 ? "primary" : "secondary"}" data-select-signal="${signal}" type="button">
+        <span>${label}</span>
+        <small>${prefix}</small>
+        ${index > 0 ? `<span class="chip-remove" data-remove-signal="${signal}">x</span>` : ""}
+      </button>
+    `;
+  }).join("");
+}
+
 function renderTopbar() {
   const snapshot = state.snapshot || {};
   const status = state.status || {};
@@ -338,7 +405,7 @@ function renderTopbar() {
   document.getElementById("hero-status").textContent = modeLabel;
   document.getElementById("hero-description").textContent =
     `Base carregada com ${formatNumber(status.history_rows, 0)} leituras entre ${formatDateTime(status.earliest_timestamp)} e ${formatDateTime(status.latest_timestamp)}. ` +
-    `${formatNumber(status.active_alerts, 0)} alertas ativos agora e ${formatNumber(status.recent_alert_events, 0)} eventos detectados na base analisada.`;
+    `${formatNumber(status.active_alerts, 0)} alertas ativos agora e ${formatNumber(status.recent_alert_events, 0)} eventos detectados no historico.`;
   document.getElementById("badge-source").textContent = `Fonte: ${status.data_source || "--"}`;
   document.getElementById("badge-refresh").textContent = `Atualizacao: ${formatDateTime(status.last_refresh_at)}`;
   document.getElementById("badge-range").textContent = `Cobertura: ${formatDateTime(status.earliest_timestamp)} ate ${formatDateTime(status.latest_timestamp)}`;
@@ -355,6 +422,7 @@ function renderOperationalPanel() {
     ["Estado de carga", snapshot.st_carga_oper || "--", "state-ok"],
     ["Modo observado", snapshot.mode_key || "--", "severity-all"],
   ];
+
   document.getElementById("status-strip").innerHTML = stripItems.map(([label, value, styleClass]) => `
     <div class="status-chip">
       <strong>${label}</strong>
@@ -368,24 +436,23 @@ function renderOperationalPanel() {
   document.getElementById("hero-kpis").innerHTML = heroSignals.length
     ? heroSignals.map((item) => {
         const activeCount = countAlertsForSignal(item.signal, activeAlerts);
-        const unit = item.unit || "";
-        const targetValue = getTargetValue(item, values);
         const targetLabel = getTargetLabel(item);
+        const targetValue = getTargetValue(item, values);
         return `
           <div class="kpi-card ${activeCount ? "highlight" : ""}">
             <div class="stack-top">
               <div>
                 <strong>${item.label}</strong>
-                <div class="kpi-value">${formatMaybe(values[item.signal], unit)}</div>
+                <div class="kpi-value">${formatMaybe(values[item.signal], item.unit || "")}</div>
               </div>
               <span class="severity-pill ${activeCount ? "severity-high" : "severity-all"}">${activeCount} ativos</span>
             </div>
-            <div class="stack-meta">${targetLabel}: ${formatMaybe(targetValue, unit)}</div>
-            <div class="stack-meta">Faixa operacional: ${formatOperatingRange(item.lower_limit, item.upper_limit, unit)}</div>
+            <div class="stack-meta">${targetLabel}: ${formatMaybe(targetValue, item.unit || "")}</div>
+            <div class="stack-meta">Faixa operacional: ${formatOperatingRange(item.lower_limit, item.upper_limit, item.unit || "")}</div>
           </div>
         `;
       }).join("")
-    : '<div class="empty-state">Nao ha sinais disponiveis para o subsistema escolhido.</div>';
+    : '<div class="empty-state">Nenhum indicador principal aparece para os filtros atuais.</div>';
 }
 
 function renderScorePanel() {
@@ -401,43 +468,133 @@ function renderScorePanel() {
         </div>
         <div>
           <div class="signal-title">${friendlySubsystem(item.subsystem)}</div>
-          <div class="signal-meta">${item.rationale?.[0] || "Sem sinal de destaque agora."}</div>
+          <div class="signal-meta">${item.rationale?.[0] || "Sem anomalia dominante no momento."}</div>
           <div class="score-caption">${item.active_alerts} alertas ativos | maior severidade: ${severityLabel(item.highest_severity || "all")}</div>
         </div>
       </div>
       <div class="score-bar"><div class="score-fill" style="width:${Math.min(100, item.score)}%"></div></div>
     </div>
   `).join("");
+}
 
-  container.querySelectorAll("[data-score-subsystem]").forEach((element) => {
-    element.addEventListener("click", async () => {
-      state.subsystem = element.dataset.scoreSubsystem;
-      ensureSignalSelection();
-      renderAll();
-      setTrendLoading();
-      await loadTrend();
-    });
-  });
+function buildDiagnosisInline(alert) {
+  const diagnosis = alert.prescriptive_diagnosis;
+  if (!diagnosis) return "";
+
+  const topHypotheses = safeArray(diagnosis.hipoteses).slice(0, 2);
+  const actions = safeArray(diagnosis.acoes_recomendadas).slice(0, 2);
+  return `
+    <div class="alert-diagnosis">
+      <div class="diagnosis-inline-grid">
+        <div class="diagnosis-inline-card">
+          <strong>interno</strong>
+          <span>${formatNumber(diagnosis.score_interno, 0)}</span>
+        </div>
+        <div class="diagnosis-inline-card">
+          <strong>periferico</strong>
+          <span>${formatNumber(diagnosis.score_periferico, 0)}</span>
+        </div>
+      </div>
+      <div class="stack-meta">Hipoteses: ${topHypotheses.map((item) => item.causa).join(" | ") || "--"}</div>
+      <div class="stack-meta">Acoes: ${actions.join(" | ") || "--"}</div>
+    </div>
+  `;
+}
+
+function renderDiagnosisPanel() {
+  const alert = getDiagnosisAlert();
+  const scoreGrid = document.getElementById("diagnosis-score-grid");
+  const flagsContainer = document.getElementById("diagnosis-flags");
+  const hypothesesContainer = document.getElementById("diagnosis-hypotheses");
+  const actionsContainer = document.getElementById("diagnosis-actions");
+  const observationsContainer = document.getElementById("diagnosis-observations");
+
+  if (!alert || !alert.prescriptive_diagnosis) {
+    document.getElementById("diagnosis-caption").textContent = "Nenhum alerta com prescricao foi encontrado para o foco atual.";
+    scoreGrid.innerHTML = `
+      <div class="diagnosis-score-card"><strong>criticidade base</strong><div class="diagnosis-score-value">--</div></div>
+      <div class="diagnosis-score-card"><strong>score interno</strong><div class="diagnosis-score-value">--</div></div>
+      <div class="diagnosis-score-card"><strong>score periferico</strong><div class="diagnosis-score-value">--</div></div>
+    `;
+    flagsContainer.innerHTML = '<div class="empty-state">Sem flags prescritivas para mostrar.</div>';
+    hypothesesContainer.innerHTML = '<div class="empty-state">Selecione um indicador com alerta prescritivo para ver o ranking de hipoteses.</div>';
+    actionsContainer.innerHTML = '<div class="empty-state">As acoes recomendadas aparecem quando houver um diagnostico prescritivo associado.</div>';
+    observationsContainer.innerHTML = '<div class="empty-state">Observacoes de confiabilidade e instrumentacao aparecerao aqui.</div>';
+    return;
+  }
+
+  const diagnosis = alert.prescriptive_diagnosis;
+  document.getElementById("diagnosis-caption").textContent =
+    `${alert.title} | ${severityLabel(alert.severity)} | ultima ocorrencia em ${formatDateTime(alert.last_seen_at)}`;
+  scoreGrid.innerHTML = `
+    <div class="diagnosis-score-card">
+      <strong>criticidade base</strong>
+      <div class="diagnosis-score-value">${diagnosis.criticidade_base || "--"}</div>
+    </div>
+    <div class="diagnosis-score-card">
+      <strong>score interno</strong>
+      <div class="diagnosis-score-value">${formatNumber(diagnosis.score_interno, 0)}</div>
+    </div>
+    <div class="diagnosis-score-card">
+      <strong>score periferico</strong>
+      <div class="diagnosis-score-value">${formatNumber(diagnosis.score_periferico, 0)}</div>
+    </div>
+  `;
+
+  flagsContainer.innerHTML = safeArray(diagnosis.flags_ativas).length
+    ? safeArray(diagnosis.flags_ativas).map((flag) => `<span class="selection-chip secondary">${flag}</span>`).join("")
+    : '<div class="empty-state">Nenhuma flag ativa foi consolidada para este diagnostico.</div>';
+
+  hypothesesContainer.innerHTML = safeArray(diagnosis.hipoteses).length
+    ? safeArray(diagnosis.hipoteses).slice(0, 8).map((item) => `
+        <div class="stack-item">
+          <div class="stack-top">
+            <div>
+              <div class="stack-title-main">${item.causa}</div>
+              <div class="stack-meta">${item.tipo}</div>
+            </div>
+            <span class="severity-pill ${item.tipo === "interno" ? "severity-high" : "severity-medium"}">${formatNumber(item.score, 0)}</span>
+          </div>
+        </div>
+      `).join("")
+    : '<div class="empty-state">O motor prescritivo nao conseguiu ranquear hipoteses para este alerta.</div>';
+
+  actionsContainer.innerHTML = safeArray(diagnosis.acoes_recomendadas).length
+    ? safeArray(diagnosis.acoes_recomendadas).map((item) => `
+        <div class="stack-item">
+          <div class="stack-title-main">${item}</div>
+        </div>
+      `).join("")
+    : '<div class="empty-state">Sem acoes recomendadas para este caso.</div>';
+
+  observationsContainer.innerHTML = safeArray(diagnosis.observacoes).length
+    ? safeArray(diagnosis.observacoes).map((item) => `
+        <div class="stack-item">
+          <div class="stack-meta">${item}</div>
+        </div>
+      `).join("")
+    : '<div class="empty-state">Nao ha observacoes adicionais para este diagnostico.</div>';
 }
 
 function renderContextPanel() {
   const snapshot = state.snapshot || {};
   const values = snapshot.values || {};
-  const trend = state.trend || {};
+  const trend = getPrimaryTrend();
   const signalMeta = getSignalMeta(state.signal);
-  const unit = signalMeta?.unit || trend.unit || "";
-  const targetLabel = trend.target_label || getTargetLabel(signalMeta);
-  const targetValue = trend.summary?.target_current ?? getTargetValue(signalMeta, values, trend.target_value);
-
+  const unit = signalMeta?.unit || trend?.unit || "";
+  const targetLabel = trend?.target_label || getTargetLabel(signalMeta);
+  const targetValue = trend?.summary?.target_current ?? getTargetValue(signalMeta, values, trend?.target_value);
   const cards = [
     ["Indicador principal", signalMeta?.label || "--"],
-    ["Valor atual", formatMaybe(trend.summary?.latest, unit)],
+    ["Valor atual", formatMaybe(trend?.summary?.latest, unit)],
     [targetLabel, formatMaybe(targetValue, unit)],
-    ["Limite inferior", formatMaybe(trend.lower_limit, unit)],
-    ["Limite superior", formatMaybe(trend.upper_limit, unit)],
+    ["Limite inferior", formatMaybe(trend?.lower_limit, unit)],
+    ["Limite superior", formatMaybe(trend?.upper_limit, unit)],
     ["Turno", values.ds_turno || "--"],
     ["PLC", String(values.st_plc ?? "--")],
+    ["Status", formatMaybe(values.status)],
   ];
+
   document.getElementById("context-grid").innerHTML = cards.map(([label, value]) => `
     <div class="context-card">
       <strong>${label}</strong>
@@ -445,7 +602,7 @@ function renderContextPanel() {
     </div>
   `).join("");
 
-  const rules = safeArray(trend.rules);
+  const rules = safeArray(trend?.rules);
   document.getElementById("rule-list").innerHTML = rules.length
     ? rules.map((rule) => `
         <div class="stack-item">
@@ -468,8 +625,13 @@ function renderQualityPanel() {
   document.getElementById("quality-list").innerHTML = issues.length
     ? issues.map((issue) => `
         <div class="stack-item">
-          <div class="stack-title-main">${issue.issue_type}</div>
-          <div class="stack-meta">${issue.signal || "geral"} | ${issue.message}</div>
+          <div class="stack-top">
+            <div>
+              <div class="stack-title-main">${issue.issue_type}</div>
+              <div class="stack-meta">${issue.signal || "geral"}</div>
+            </div>
+          </div>
+          <div class="stack-meta">${issue.message}</div>
         </div>
       `).join("")
     : '<div class="empty-state">Nenhuma observacao de qualidade foi apontada na ultima amostra.</div>';
@@ -489,33 +651,23 @@ function renderAlertList(containerId, alerts, emptyText, counterId) {
             <span class="severity-pill ${severityClass(alert.severity)}">${severityLabel(alert.severity)}</span>
           </div>
           <div class="stack-meta">${alert.message}</div>
-          <div class="stack-footer">
-            Valor: ${formatMaybe(alert.current_value)} | Ultima ocorrencia: ${formatDateTime(alert.last_seen_at)}
-          </div>
+          <div class="stack-footer">Valor: ${formatMaybe(alert.current_value)} | Ultima ocorrencia: ${formatDateTime(alert.last_seen_at)}</div>
+          ${buildDiagnosisInline(alert)}
         </div>
       `).join("")
     : `<div class="empty-state">${emptyText}</div>`;
-
-  container.querySelectorAll("[data-alert-signal]").forEach((element) => {
-    element.addEventListener("click", async () => {
-      const nextSignal = element.dataset.alertSignal;
-      const nextSubsystem = element.dataset.alertSubsystem;
-      if (!nextSignal) return;
-      await focusSignal(nextSignal, nextSubsystem || null);
-    });
-  });
 }
 
 function renderAlertPanels() {
   renderAlertList(
     "recent-alert-list",
-    getFilteredRecentAlerts().slice(0, 80),
+    getFilteredRecentAlerts().slice(0, 120),
     "Nenhum evento historico encontrado dentro dos filtros escolhidos.",
     "recent-count",
   );
   renderAlertList(
     "active-alert-list",
-    getFilteredActiveAlerts().slice(0, 80),
+    getFilteredActiveAlerts().slice(0, 120),
     "Nenhum alerta ativo para os filtros atuais.",
     "active-count",
   );
@@ -527,15 +679,19 @@ function renderSignalExplorer() {
   document.getElementById("signal-panel-note").textContent =
     `${friendlySubsystem(state.subsystem)} | ${formatNumber(visibleSignals.length, 0)} sinais visiveis`;
 
+  const values = state.snapshot?.values || {};
+  const activeAlerts = safeArray(state.activeAlerts);
+  const recentAlerts = safeArray(state.recentAlerts);
   container.innerHTML = visibleSignals.length
     ? visibleSignals.map((item) => {
-        const values = state.snapshot?.values || {};
-        const activeCount = countAlertsForSignal(item.signal, safeArray(state.activeAlerts));
-        const recentCount = countAlertsForSignal(item.signal, safeArray(state.recentAlerts));
+        const activeCount = countAlertsForSignal(item.signal, activeAlerts);
+        const recentCount = countAlertsForSignal(item.signal, recentAlerts);
+        const chartSelected = isChartSignal(item.signal);
+        const isPrimary = state.signal === item.signal;
         const targetValue = getTargetValue(item, values);
         const targetLabel = getTargetLabel(item);
         return `
-          <div class="signal-item ${state.signal === item.signal ? "active" : ""}" data-signal="${item.signal}">
+          <div class="signal-item ${state.signal === item.signal ? "focused" : ""}">
             <div class="signal-top">
               <div>
                 <div class="signal-title">${item.label}</div>
@@ -545,40 +701,63 @@ function renderSignalExplorer() {
                 ${activeCount ? `${activeCount} ativos` : `${recentCount} eventos`}
               </span>
             </div>
-            <div class="signal-meta">${friendlySubsystem(item.subsystem)} | ${item.signal}</div>
-            <div class="signal-footer">
-              ${targetLabel}: ${formatMaybe(targetValue, item.unit || "")} | Faixa: ${formatOperatingRange(item.lower_limit, item.upper_limit, item.unit || "")}
+            <div class="signal-meta">${friendlySubsystem(item.subsystem)} | ${item.signal}${item.is_setpoint ? " | meta" : item.is_derived ? " | calculado" : ""}</div>
+            <div class="signal-footer">${targetLabel}: ${formatMaybe(targetValue, item.unit || "")} | Faixa: ${formatOperatingRange(item.lower_limit, item.upper_limit, item.unit || "")}</div>
+            <div class="signal-actions">
+              <button class="mini-button ${isPrimary ? "active" : ""}" data-focus-signal="${item.signal}" data-focus-subsystem="${item.subsystem}" type="button">
+                ${isPrimary ? "Em foco" : "Focar"}
+              </button>
+              <button class="mini-button secondary ${chartSelected ? "active" : ""}" ${isPrimary ? "disabled" : `data-toggle-signal="${item.signal}"`} type="button">
+                ${isPrimary ? "Principal" : chartSelected ? "No grafico" : "Correlacionar"}
+              </button>
             </div>
           </div>
         `;
       }).join("")
     : '<div class="empty-state">Nenhum sinal corresponde aos filtros atuais.</div>';
-
-  container.querySelectorAll("[data-signal]").forEach((element) => {
-    element.addEventListener("click", async () => {
-      await focusSignal(element.dataset.signal);
-    });
-  });
 }
 
 function renderTrendSummary() {
-  const trend = state.trend || {};
-  const summary = trend.summary || {};
-  const unit = trend.unit || "";
-  const targetLabel = trend.target_label || "Setpoint";
+  const trend = getPrimaryTrend();
+  const unit = trend?.unit || "";
+  const targetLabel = trend?.target_label || "Setpoint";
   const cards = [
-    ["Valor atual", formatMaybe(summary.latest, unit)],
-    [targetLabel, formatMaybe(summary.target_current ?? trend.target_value, unit)],
-    ["Limite inferior", formatMaybe(trend.lower_limit, unit)],
-    ["Limite superior", formatMaybe(trend.upper_limit, unit)],
-    ["Tendencia 15 min", formatMaybe(summary.slope_15m, unit ? `${unit}/min` : "")],
-    ["Z-score 1h", formatMaybe(summary.zscore_1h)],
+    ["Valor atual", formatMaybe(trend?.summary?.latest, unit)],
+    [targetLabel, formatMaybe(trend?.summary?.target_current ?? trend?.target_value, unit)],
+    ["Faixa operacional", formatOperatingRange(trend?.lower_limit, trend?.upper_limit, unit)],
+    ["Media da janela", formatMaybe(trend?.summary?.mean, unit)],
+    ["Tendencia 15 min", formatMaybe(trend?.summary?.slope_15m, unit ? `${unit}/min` : "")],
+    ["Z-score 1h", formatMaybe(trend?.summary?.zscore_1h)],
   ];
+
   document.getElementById("trend-summary-grid").innerHTML = cards.map(([label, value]) => `
     <div class="context-card">
       <strong>${label}</strong>
       <div class="context-value">${value}</div>
     </div>
+  `).join("");
+}
+
+function renderTrendLegend() {
+  document.getElementById("trend-legend").innerHTML = `
+    <span><i class="legend-line legend-actual"></i>Valor real</span>
+    <span><i class="legend-line legend-target"></i>Setpoint real</span>
+    <span><i class="legend-line legend-upper"></i>Limite superior</span>
+    <span><i class="legend-line legend-lower"></i>Limite inferior</span>
+    <span><i class="legend-line legend-mean"></i>Media 15 min</span>
+    <span><i class="legend-line legend-ewma"></i>EWMA</span>
+    <span><i class="legend-dot legend-alert"></i>Eventos de alerta</span>
+  `;
+}
+
+function renderCorrelationLegend(series) {
+  const container = document.getElementById("correlation-legend");
+  if (series.length <= 1) {
+    container.innerHTML = '<span><i class="legend-line legend-actual"></i>Adicione outros indicadores para enxergar correlacao normalizada.</span>';
+    return;
+  }
+  container.innerHTML = series.map((item) => `
+    <span><i class="legend-line" style="background:${colorForSignal(item.signal)}"></i>${item.label}</span>
   `).join("");
 }
 
@@ -590,46 +769,91 @@ function buildPath(points, xKey, yKey) {
 
 function getMarkerColor(severity) {
   const map = {
-    low: "#8ecf87",
-    medium: "#f0c85d",
-    high: "#ef9a58",
-    critical: "#f26969",
+    low: "#79d08e",
+    medium: "#f0c75a",
+    high: "#f29a56",
+    critical: "#f16d6d",
   };
-  return map[String(severity || "").toLowerCase()] || "#f0c85d";
+  return map[String(severity || "").toLowerCase()] || "#f0c75a";
 }
 
-function renderChart() {
+function setTrendLoading() {
+  document.getElementById("trend-title").textContent = "Atualizando leitura temporal...";
+  document.getElementById("trend-subtitle").textContent = "Buscando a serie temporal para os indicadores selecionados.";
+  document.getElementById("trend-mode-note").textContent = "Atualizando o foco principal e as correlacoes.";
+  document.getElementById("primary-chart-note").textContent = "Recalculando a leitura principal.";
+  document.getElementById("correlation-subtitle").textContent = "Recalculando as correlacoes.";
+  document.getElementById("trend-chart").innerHTML = "";
+  document.getElementById("correlation-chart").innerHTML = "";
+  document.getElementById("chart-tooltip").classList.remove("visible");
+  document.getElementById("correlation-tooltip").classList.remove("visible");
+}
+
+function buildGridLines(width, height, margin, minValue, maxValue) {
+  const lines = [];
+  const tickCount = 4;
+  for (let step = 0; step <= tickCount; step += 1) {
+    const y = margin.top + ((height - margin.top - margin.bottom) / tickCount) * step;
+    const value = maxValue - ((maxValue - minValue) / tickCount) * step;
+    lines.push(`
+      <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-dasharray="4 8" />
+      <text x="${margin.left - 10}" y="${y + 4}" fill="rgba(174,181,192,0.95)" font-size="12" text-anchor="end" font-family="Aptos, Segoe UI, Arial, sans-serif">${formatNumber(value)}</text>
+    `);
+  }
+  return lines.join("");
+}
+
+function buildXTicks(minTs, maxTs, width, height, margin, rangeUnit, bucket) {
+  const plotWidth = width - margin.left - margin.right;
+  const xScale = (value) => {
+    if (maxTs === minTs) return margin.left + plotWidth / 2;
+    return margin.left + ((value - minTs) / (maxTs - minTs)) * plotWidth;
+  };
+
+  const ticks = [];
+  for (let index = 0; index < 5; index += 1) {
+    const ts = minTs + ((maxTs - minTs) / 4) * index;
+    ticks.push(`
+      <text x="${xScale(ts)}" y="${height - 14}" fill="rgba(174,181,192,0.95)" font-size="12" text-anchor="middle" font-family="Aptos, Segoe UI, Arial, sans-serif">${formatAxisDate(ts, rangeUnit, bucket)}</text>
+    `);
+  }
+  return ticks.join("");
+}
+
+function renderPrimaryChart() {
   const svg = document.getElementById("trend-chart");
   const tooltip = document.getElementById("chart-tooltip");
-  const trend = state.trend || {};
-  const points = safeArray(trend.points);
+  const trend = getPrimaryTrend();
+  const points = safeArray(trend?.points);
   const title = document.getElementById("trend-title");
   const subtitle = document.getElementById("trend-subtitle");
+  const modeNote = document.getElementById("trend-mode-note");
+  const chartNote = document.getElementById("primary-chart-note");
 
-  if (!points.length) {
+  if (!trend || !points.length) {
     title.textContent = "Sem dados suficientes para o indicador atual";
     subtitle.textContent = "A serie temporal ficou vazia para a janela escolhida.";
+    modeNote.textContent = "Leitura principal indisponivel.";
+    chartNote.textContent = "Nenhum ponto retornado para o indicador em foco.";
     svg.innerHTML = "";
     tooltip.classList.remove("visible");
     return;
   }
 
-  const unit = trend.unit || "";
   title.textContent = `${trend.label} (${trend.signal})`;
   subtitle.textContent = `${friendlySubsystem(trend.subsystem)} | ${points.length} pontos | janela: ${trend.range_value} ${trend.range_unit} | agrupamento: ${trend.bucket}`;
+  modeNote.textContent = `Principal: ${trend.label} | correlacionando ${Math.max(0, state.selectedSignals.length - 1)} indicador(es)`;
+  chartNote.textContent = "Meta, limites e eventos do indicador em foco.";
 
   const width = 960;
   const height = 430;
-  const margin = { top: 26, right: 26, bottom: 48, left: 78 };
+  const margin = { top: 24, right: 26, bottom: 48, left: 78 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
 
   const timestamps = points.map((point) => new Date(point.timestamp).getTime()).filter(Number.isFinite);
   if (!timestamps.length) {
-    title.textContent = `${trend.label} (${trend.signal})`;
-    subtitle.textContent = "Nao foi possivel interpretar os timestamps retornados para a serie temporal.";
     svg.innerHTML = "";
-    tooltip.classList.remove("visible");
     return;
   }
   const minTs = Math.min(...timestamps);
@@ -647,16 +871,13 @@ function renderChart() {
     });
   });
   if (!numericValues.length) {
-    title.textContent = `${trend.label} (${trend.signal})`;
-    subtitle.textContent = "A janela atual nao trouxe valores numericos suficientes para desenhar o grafico.";
     svg.innerHTML = "";
-    tooltip.classList.remove("visible");
     return;
   }
 
   const rawMin = Math.min(...numericValues);
   const rawMax = Math.max(...numericValues);
-  const padding = rawMin === rawMax ? Math.max(Math.abs(rawMax), 1) * 0.12 : (rawMax - rawMin) * 0.12;
+  const padding = rawMin === rawMax ? Math.max(Math.abs(rawMax), 1) * 0.15 : (rawMax - rawMin) * 0.15;
   const minValue = rawMin - padding;
   const maxValue = rawMax + padding;
   const yScale = (value) => {
@@ -677,47 +898,13 @@ function renderChart() {
     upperY: point.upper_limit === null || point.upper_limit === undefined ? null : yScale(Number(point.upper_limit)),
   }));
 
-  const gridLines = [];
-  for (let step = 0; step <= 4; step += 1) {
-    const y = margin.top + (plotHeight / 4) * step;
-    const value = maxValue - ((maxValue - minValue) / 4) * step;
-    gridLines.push(`
-      <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="5 7" />
-      <text x="${margin.left - 12}" y="${y + 4}" fill="rgba(168,173,184,0.95)" font-size="12" text-anchor="end" font-family="Arial, Helvetica, sans-serif">${formatNumber(value)}</text>
-    `);
-  }
-
-  const xTicks = [];
-  for (let index = 0; index < 5; index += 1) {
-    const ts = minTs + ((maxTs - minTs) / 4) * index;
-    const x = xScale(ts);
-    xTicks.push(`
-      <text x="${x}" y="${height - 14}" fill="rgba(168,173,184,0.95)" font-size="12" text-anchor="middle" font-family="Arial, Helvetica, sans-serif">${formatAxisDate(ts, trend.range_unit, trend.bucket)}</text>
-    `);
-  }
-
-  let bandMarkup = "";
   const lastPoint = chartPoints[chartPoints.length - 1];
-  const highlightY =
-    lastPoint.y ??
-    lastPoint.targetY ??
-    lastPoint.meanY ??
-    lastPoint.ewmaY ??
-    (margin.top + plotHeight / 2);
-  if (lastPoint.lower_limit !== null && lastPoint.lower_limit !== undefined && lastPoint.upper_limit !== null && lastPoint.upper_limit !== undefined) {
-    const bandTop = yScale(Number(lastPoint.upper_limit));
-    const bandBottom = yScale(Number(lastPoint.lower_limit));
-    bandMarkup = `<rect x="${margin.left}" y="${bandTop}" width="${plotWidth}" height="${bandBottom - bandTop}" fill="rgba(35,163,156,0.09)" rx="16" />`;
-  }
+  const bandMarkup = (lastPoint.lower_limit !== null && lastPoint.lower_limit !== undefined
+    && lastPoint.upper_limit !== null && lastPoint.upper_limit !== undefined)
+    ? `<rect x="${margin.left}" y="${yScale(Number(lastPoint.upper_limit))}" width="${plotWidth}" height="${yScale(Number(lastPoint.lower_limit)) - yScale(Number(lastPoint.upper_limit))}" fill="rgba(57,199,194,0.08)" rx="16" />`
+    : "";
 
-  const actualPath = buildPath(chartPoints, "x", "y");
-  const meanPath = buildPath(chartPoints, "x", "meanY");
-  const ewmaPath = buildPath(chartPoints, "x", "ewmaY");
-  const targetPath = buildPath(chartPoints, "x", "targetY");
-  const lowerPath = buildPath(chartPoints, "x", "lowerY");
-  const upperPath = buildPath(chartPoints, "x", "upperY");
-
-  const markerAlerts = getSelectedSignalAlerts().filter((alert) => {
+  const markerAlerts = getSignalAlertEvents(trend.signal).filter((alert) => {
     const ts = new Date(alert.last_seen_at).getTime();
     return Number.isFinite(ts) && ts >= minTs && ts <= maxTs;
   }).slice(0, 80);
@@ -729,28 +916,28 @@ function renderChart() {
       if (!best) return point;
       return Math.abs(point.rawTs - ts) < Math.abs(best.rawTs - ts) ? point : best;
     }, null);
-    const y = nearestPoint?.y ?? margin.top + 16;
+    const y = nearestPoint?.y ?? margin.top + 20;
     const color = getMarkerColor(alert.severity);
     return `
-      <line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${color}" stroke-opacity="0.25" stroke-dasharray="4 8" />
-      <circle cx="${x}" cy="${y}" r="5" fill="${color}" stroke="#121212" stroke-width="2" />
+      <line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${color}" stroke-opacity="0.22" stroke-dasharray="4 8" />
+      <circle cx="${x}" cy="${y}" r="5" fill="${color}" stroke="#101316" stroke-width="2" />
     `;
   }).join("");
 
   svg.innerHTML = `
     <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
     ${bandMarkup}
-    ${gridLines.join("")}
+    ${buildGridLines(width, height, margin, minValue, maxValue)}
     <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="rgba(255,255,255,0.12)" />
     ${markerMarkup}
-    <path d="${targetPath}" fill="none" stroke="#f0c85d" stroke-width="2.2" stroke-dasharray="9 7" stroke-linecap="round" />
-    <path d="${upperPath}" fill="none" stroke="#f2a35d" stroke-width="1.9" stroke-dasharray="4 6" stroke-linecap="round" />
-    <path d="${lowerPath}" fill="none" stroke="#8ecf87" stroke-width="1.9" stroke-dasharray="4 6" stroke-linecap="round" />
-    <path d="${meanPath}" fill="none" stroke="#153150" stroke-width="2.5" stroke-linecap="round" />
-    <path d="${ewmaPath}" fill="none" stroke="#c26e23" stroke-width="2.3" stroke-dasharray="6 6" stroke-linecap="round" />
-    <path d="${actualPath}" fill="none" stroke="#23a39c" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="${lastPoint.x}" cy="${highlightY}" r="6" fill="#23a39c" />
-    ${xTicks.join("")}
+    <path d="${buildPath(chartPoints, "x", "targetY")}" fill="none" stroke="#f0c75a" stroke-width="2.2" stroke-dasharray="8 7" stroke-linecap="round" />
+    <path d="${buildPath(chartPoints, "x", "upperY")}" fill="none" stroke="#f29a56" stroke-width="1.8" stroke-dasharray="4 6" />
+    <path d="${buildPath(chartPoints, "x", "lowerY")}" fill="none" stroke="#79d08e" stroke-width="1.8" stroke-dasharray="4 6" />
+    <path d="${buildPath(chartPoints, "x", "meanY")}" fill="none" stroke="#6fa3ff" stroke-width="2.2" />
+    <path d="${buildPath(chartPoints, "x", "ewmaY")}" fill="none" stroke="#c16f39" stroke-width="2.1" stroke-dasharray="6 6" />
+    <path d="${buildPath(chartPoints, "x", "y")}" fill="none" stroke="#39c7c2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${lastPoint.x}" cy="${lastPoint.y ?? margin.top + plotHeight / 2}" r="5.5" fill="#39c7c2" />
+    ${buildXTicks(minTs, maxTs, width, height, margin, trend.range_unit, trend.bucket)}
   `;
 
   svg.onmouseleave = () => tooltip.classList.remove("visible");
@@ -770,12 +957,12 @@ function renderChart() {
 
     tooltip.innerHTML = `
       <div><strong>${formatDateTime(nearest.timestamp)}</strong></div>
-      <div>Valor real: ${formatMaybe(nearest.value, unit)}</div>
-      <div>${trend.target_label || "Setpoint"}: ${formatMaybe(nearest.target_value, unit)}</div>
-      <div>Limite inferior: ${formatMaybe(nearest.lower_limit, unit)}</div>
-      <div>Limite superior: ${formatMaybe(nearest.upper_limit, unit)}</div>
-      <div>Media 15 min: ${formatMaybe(nearest.rolling_mean, unit)}</div>
-      <div>EWMA: ${formatMaybe(nearest.ewma, unit)}</div>
+      <div>Valor real: ${formatMaybe(nearest.value, trend.unit || "")}</div>
+      <div>${trend.target_label || "Setpoint"}: ${formatMaybe(nearest.target_value, trend.unit || "")}</div>
+      <div>Limite inferior: ${formatMaybe(nearest.lower_limit, trend.unit || "")}</div>
+      <div>Limite superior: ${formatMaybe(nearest.upper_limit, trend.unit || "")}</div>
+      <div>Media 15 min: ${formatMaybe(nearest.rolling_mean, trend.unit || "")}</div>
+      <div>EWMA: ${formatMaybe(nearest.ewma, trend.unit || "")}</div>
       <div>Eventos no ponto: ${formatNumber(nearbyAlerts.length, 0)}</div>
     `;
     tooltip.style.left = `${event.clientX - bounds.left}px`;
@@ -784,46 +971,291 @@ function renderChart() {
   };
 }
 
+function normalizeSeries(series) {
+  const rawValues = safeArray(series.points).map((point) => Number(point.value)).filter(Number.isFinite);
+  if (!rawValues.length) return [];
+  const minValue = Math.min(...rawValues);
+  const maxValue = Math.max(...rawValues);
+  return safeArray(series.points).map((point) => {
+    const value = Number(point.value);
+    if (!Number.isFinite(value)) {
+      return { ...point, normalized: null, rawTs: new Date(point.timestamp).getTime() };
+    }
+    const normalized = maxValue === minValue ? 50 : ((value - minValue) / (maxValue - minValue)) * 100;
+    return {
+      ...point,
+      normalized,
+      rawTs: new Date(point.timestamp).getTime(),
+    };
+  });
+}
+
+function renderCorrelationChart() {
+  const svg = document.getElementById("correlation-chart");
+  const tooltip = document.getElementById("correlation-tooltip");
+  const subtitle = document.getElementById("correlation-subtitle");
+  const series = state.selectedSignals
+    .map((signal) => getTrendSeries(signal))
+    .filter((item) => item && safeArray(item.points).length);
+
+  renderCorrelationLegend(series);
+
+  if (!series.length) {
+    subtitle.textContent = "Nenhuma serie temporal foi retornada para os indicadores selecionados.";
+    svg.innerHTML = "";
+    tooltip.classList.remove("visible");
+    return;
+  }
+
+  subtitle.textContent = series.length > 1
+    ? "Curvas normalizadas para comparar comportamento relativo entre indicadores com unidades diferentes."
+    : "Selecione mais indicadores para habilitar a comparacao normalizada.";
+
+  const width = 960;
+  const height = 260;
+  const margin = { top: 20, right: 26, bottom: 42, left: 60 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+
+  const timestamps = series
+    .flatMap((item) => safeArray(item.points).map((point) => new Date(point.timestamp).getTime()))
+    .filter(Number.isFinite);
+  if (!timestamps.length) {
+    svg.innerHTML = "";
+    return;
+  }
+  const minTs = Math.min(...timestamps);
+  const maxTs = Math.max(...timestamps);
+  const xScale = (value) => {
+    if (maxTs === minTs) return margin.left + plotWidth / 2;
+    return margin.left + ((value - minTs) / (maxTs - minTs)) * plotWidth;
+  };
+  const yScale = (value) => margin.top + plotHeight - (value / 100) * plotHeight;
+
+  const normalizedSeries = series.map((item) => ({
+    ...item,
+    color: colorForSignal(item.signal),
+    normalizedPoints: normalizeSeries(item).map((point) => ({
+      ...point,
+      x: xScale(point.rawTs),
+      y: point.normalized === null ? null : yScale(point.normalized),
+    })),
+  }));
+
+  svg.innerHTML = `
+    <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
+    ${buildGridLines(width, height, margin, 0, 100)}
+    <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="rgba(255,255,255,0.12)" />
+    ${normalizedSeries.map((item) => `
+      <path d="${buildPath(item.normalizedPoints, "x", "y")}" fill="none" stroke="${item.color}" stroke-width="${item.signal === state.signal ? 3.3 : 2.4}" stroke-linecap="round" stroke-linejoin="round" />
+    `).join("")}
+    ${buildXTicks(minTs, maxTs, width, height, margin, state.rangeUnit, state.bucket)}
+  `;
+
+  svg.onmouseleave = () => tooltip.classList.remove("visible");
+  svg.onmousemove = (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const relativeX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const summaries = normalizedSeries.map((item) => {
+      const nearest = item.normalizedPoints.reduce((best, point) => {
+        if (!best) return point;
+        return Math.abs(point.x - relativeX) < Math.abs(best.x - relativeX) ? point : best;
+      }, null);
+      return {
+        label: item.label,
+        unit: item.unit,
+        color: item.color,
+        value: nearest?.value,
+        normalized: nearest?.normalized,
+        timestamp: nearest?.timestamp,
+      };
+    }).filter((item) => item.timestamp);
+
+    if (!summaries.length) return;
+    tooltip.innerHTML = `
+      <div><strong>${formatDateTime(summaries[0].timestamp)}</strong></div>
+      ${summaries.map((item) => `
+        <div style="color:${item.color}">${item.label}: ${formatMaybe(item.value, item.unit || "")} | indice ${formatNumber(item.normalized)}</div>
+      `).join("")}
+    `;
+    tooltip.style.left = `${event.clientX - bounds.left}px`;
+    tooltip.style.top = `${event.clientY - bounds.top}px`;
+    tooltip.classList.add("visible");
+  };
+}
+
+function renderCharts() {
+  renderTrendLegend();
+  renderTrendSummary();
+  renderPrimaryChart();
+  renderCorrelationChart();
+}
+
+function bindDynamicEvents() {
+  document.querySelectorAll("[data-subsystem]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", async () => {
+      const previousSignal = state.signal;
+      state.subsystem = button.dataset.subsystem;
+      ensureSignalSelection();
+      renderAll();
+      if (previousSignal !== state.signal) {
+        setTrendLoading();
+        await loadTrends();
+      } else {
+        renderCharts();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-range-value]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", async () => {
+      state.rangeValue = Number(button.dataset.rangeValue);
+      state.rangeUnit = button.dataset.rangeUnit;
+      state.bucket = button.dataset.bucket;
+      syncFilterInputs();
+      renderPresetButtons();
+      bindDynamicEvents();
+      setTrendLoading();
+      await loadTrends();
+    });
+  });
+
+  document.querySelectorAll("[data-score-subsystem]").forEach((element) => {
+    if (element.dataset.bound === "1") return;
+    element.dataset.bound = "1";
+    element.addEventListener("click", async () => {
+      const previousSignal = state.signal;
+      state.subsystem = element.dataset.scoreSubsystem;
+      ensureSignalSelection();
+      renderAll();
+      if (previousSignal !== state.signal) {
+        setTrendLoading();
+        await loadTrends();
+      } else {
+        renderCharts();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-select-signal]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", async (event) => {
+      const removeSignal = event.target.dataset.removeSignal;
+      if (removeSignal) {
+        event.stopPropagation();
+        state.selectedSignals = state.selectedSignals.filter((signal) => signal !== removeSignal);
+        ensureSignalSelection();
+        renderAll();
+        setTrendLoading();
+        await loadTrends();
+        return;
+      }
+      setPrimarySignal(button.dataset.selectSignal);
+      renderAll();
+      setTrendLoading();
+      await loadTrends();
+    });
+  });
+
+  document.querySelectorAll("[data-alert-signal]").forEach((element) => {
+    if (element.dataset.bound === "1") return;
+    element.dataset.bound = "1";
+    element.addEventListener("click", async () => {
+      const nextSignal = element.dataset.alertSignal;
+      const nextSubsystem = element.dataset.alertSubsystem;
+      if (!nextSignal) return;
+      setPrimarySignal(nextSignal, nextSubsystem || null);
+      renderAll();
+      setTrendLoading();
+      await loadTrends();
+    });
+  });
+
+  document.querySelectorAll("[data-focus-signal]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", async () => {
+      setPrimarySignal(button.dataset.focusSignal, button.dataset.focusSubsystem || null);
+      renderAll();
+      setTrendLoading();
+      await loadTrends();
+    });
+  });
+
+  document.querySelectorAll("[data-toggle-signal]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", async () => {
+      toggleChartSignal(button.dataset.toggleSignal);
+      ensureSignalSelection();
+      renderAll();
+      setTrendLoading();
+      await loadTrends();
+    });
+  });
+}
+
 function renderAll() {
   ensureSignalSelection();
   renderTopbar();
   renderSubsystemPills();
   renderPresetButtons();
   populateSelects();
+  renderSelectedSignals();
   renderOperationalPanel();
   renderScorePanel();
+  renderDiagnosisPanel();
   renderContextPanel();
-  renderQualityPanel();
   renderAlertPanels();
   renderSignalExplorer();
+  renderQualityPanel();
+  bindDynamicEvents();
 }
 
-async function loadTrend() {
-  if (!state.signal) return;
+function getTrendPointBudget() {
+  if (state.bucket === "raw" && state.rangeUnit === "days") return 420;
+  if (state.bucket === "raw" && state.rangeUnit === "hours") return 520;
+  if (state.bucket === "raw" && state.rangeUnit === "minutes") return 360;
+  if (state.bucket === "minutes") return 700;
+  if (state.bucket === "hours") return 600;
+  return 400;
+}
+
+async function loadTrends() {
+  ensureSignalSelection();
+  if (!state.selectedSignals.length) return;
+
   const currentRequestId = ++state.trendRequestId;
-  const currentSignal = state.signal;
+  const selectedAtRequest = [...state.selectedSignals];
   const params = new URLSearchParams({
-    signal: currentSignal,
     range_value: String(state.rangeValue),
     range_unit: state.rangeUnit,
     bucket: state.bucket,
+    max_points: String(getTrendPointBudget()),
   });
+  selectedAtRequest.forEach((signal) => params.append("signals", signal));
+
   try {
-    const trendResponse = await fetchJson(`/status/trend?${params.toString()}`);
-    if (currentRequestId !== state.trendRequestId || currentSignal !== state.signal) {
+    const trendResponse = await fetchJson(`/status/trends?${params.toString()}`);
+    const sameSelection = selectedAtRequest.length === state.selectedSignals.length
+      && selectedAtRequest.every((signal, index) => signal === state.selectedSignals[index]);
+    if (currentRequestId !== state.trendRequestId || !sameSelection) {
       return;
     }
-    state.trend = trendResponse;
+    state.trends = trendResponse;
     renderContextPanel();
-    renderTrendSummary();
-    renderChart();
+    renderCharts();
   } catch (error) {
-    if (currentRequestId !== state.trendRequestId) {
-      return;
-    }
+    if (currentRequestId !== state.trendRequestId) return;
     document.getElementById("trend-title").textContent = "Falha ao atualizar o grafico";
     document.getElementById("trend-subtitle").textContent = String(error);
     document.getElementById("trend-chart").innerHTML = "";
+    document.getElementById("correlation-chart").innerHTML = "";
   }
 }
 
@@ -834,7 +1266,7 @@ async function loadBaseData() {
     fetchJson("/status/current"),
     fetchJson("/status/scores"),
     fetchJson("/alerts"),
-    fetchJson("/alerts/recent?limit=5000"),
+    fetchJson(`/alerts/recent?limit=${RECENT_ALERT_FETCH_LIMIT}`),
   ]);
 
   state.catalog = catalogData;
@@ -847,55 +1279,70 @@ async function loadBaseData() {
   if (!state.signal) {
     state.signal = state.catalog?.default_signal || null;
   }
+  ensureSignalSelection();
 }
 
 async function refreshDashboard() {
   await loadBaseData();
   renderAll();
-  await loadTrend();
+  setTrendLoading();
+  await loadTrends();
 }
 
 function attachEvents() {
   document.getElementById("signal-select").addEventListener("change", async (event) => {
-    await focusSignal(event.target.value);
+    setPrimarySignal(event.target.value);
+    renderAll();
+    setTrendLoading();
+    await loadTrends();
   });
 
   document.getElementById("severity-select").addEventListener("change", () => {
     state.severity = document.getElementById("severity-select").value;
     renderOperationalPanel();
+    renderScorePanel();
+    renderDiagnosisPanel();
     renderAlertPanels();
     renderSignalExplorer();
-    renderScorePanel();
-    renderChart();
+    renderCharts();
+    bindDynamicEvents();
   });
 
   document.getElementById("search-input").addEventListener("input", async () => {
+    const previousSignal = state.signal;
     state.search = document.getElementById("search-input").value.trim();
     ensureSignalSelection();
     renderAll();
-    setTrendLoading();
-    await loadTrend();
+    if (previousSignal !== state.signal) {
+      setTrendLoading();
+      await loadTrends();
+    } else {
+      renderCharts();
+    }
   });
 
   document.getElementById("range-value").addEventListener("change", async () => {
     state.rangeValue = Number(document.getElementById("range-value").value || 1);
     renderPresetButtons();
+    bindDynamicEvents();
     setTrendLoading();
-    await loadTrend();
+    await loadTrends();
   });
 
   document.getElementById("range-unit").addEventListener("change", async () => {
     state.rangeUnit = document.getElementById("range-unit").value;
     renderPresetButtons();
+    bindDynamicEvents();
     setTrendLoading();
-    await loadTrend();
+    await loadTrends();
   });
 
   document.getElementById("bucket-select").addEventListener("change", async () => {
     state.bucket = document.getElementById("bucket-select").value;
     renderPresetButtons();
+    bindDynamicEvents();
     setTrendLoading();
-    await loadTrend();
+    await loadTrends();
   });
 
   document.getElementById("refresh-button").addEventListener("click", async () => {

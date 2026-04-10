@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.domain.schemas import (
+    MultiSignalTrendResponse,
     ReadingsResponse,
     RiskScoresResponse,
     SignalCatalogResponse,
@@ -56,6 +57,7 @@ def get_signal_trend(
     range_value: int = Query(default=6, ge=1, le=5000),
     range_unit: str = Query(default="hours", pattern="^(points|minutes|hours|days)$"),
     bucket: str = Query(default="raw", pattern="^(raw|minutes|hours|days)$"),
+    max_points: int = Query(default=600, ge=60, le=4000),
     service: HealthService = Depends(get_health_service),
 ) -> SignalTrendResponse:
     return service.get_signal_trend_window(
@@ -63,6 +65,25 @@ def get_signal_trend(
         range_value=range_value,
         range_unit=range_unit,
         bucket=bucket,
+        max_points=max_points,
+    )
+
+
+@router.get("/trends", response_model=MultiSignalTrendResponse)
+def get_multi_signal_trend(
+    signals: list[str] = Query(..., min_length=3),
+    range_value: int = Query(default=6, ge=1, le=5000),
+    range_unit: str = Query(default="hours", pattern="^(points|minutes|hours|days)$"),
+    bucket: str = Query(default="raw", pattern="^(raw|minutes|hours|days)$"),
+    max_points: int = Query(default=600, ge=60, le=4000),
+    service: HealthService = Depends(get_health_service),
+) -> MultiSignalTrendResponse:
+    return service.get_multi_signal_trend_window(
+        signals=signals,
+        range_value=range_value,
+        range_unit=range_unit,
+        bucket=bucket,
+        max_points=max_points,
     )
 
 

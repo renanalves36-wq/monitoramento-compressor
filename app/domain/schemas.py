@@ -90,6 +90,8 @@ class SignalCatalogItem(BaseModel):
     label: str
     subsystem: str
     unit: str | None = None
+    is_setpoint: bool = False
+    is_derived: bool = False
     default_target_signal: str | None = None
     default_target_label: str | None = None
     lower_limit: float | None = None
@@ -156,6 +158,15 @@ class SignalTrendResponse(BaseModel):
     summary: TrendSummary = Field(default_factory=TrendSummary)
     points: list[TrendPoint] = Field(default_factory=list)
     rules: list[TrendRuleSummary] = Field(default_factory=list)
+
+
+class MultiSignalTrendResponse(BaseModel):
+    signals: list[str] = Field(default_factory=list)
+    range_unit: str = "hours"
+    range_value: int = 6
+    bucket: str = "raw"
+    correlation_mode: str = "single"
+    series: list[SignalTrendResponse] = Field(default_factory=list)
 
 
 class StatusResponse(BaseModel):

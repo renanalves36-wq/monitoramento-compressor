@@ -6,11 +6,13 @@ from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from app.config import Settings
 from app.domain.mappings import (
     DEFAULT_SIGNAL_BY_SUBSYSTEM,
+    DERIVED_SIGNALS,
     SUBSYSTEM_SIGNALS,
     TARGET_SIGNAL_BY_SIGNAL,
     get_signal_label,
@@ -18,6 +20,7 @@ from app.domain.mappings import (
 )
 from app.domain.schemas import (
     AlertsResponse,
+    MultiSignalTrendResponse,
     ReadingsResponse,
     RiskScoresResponse,
     SignalCatalogItem,
@@ -199,8 +202,6 @@ class HealthService:
             for signal in subsystem_signals:
                 if signal not in available_columns:
                     continue
-                if signal.startswith("sp_"):
-                    continue
                 if signal in self._feature_frame.columns and not pd.api.types.is_numeric_dtype(
                     self._feature_frame[signal]
                 ):
@@ -213,6 +214,8 @@ class HealthService:
                         label=get_signal_label(signal),
                         subsystem=subsystem,
                         unit=get_signal_unit(signal),
+                        is_setpoint=signal.startswith("sp_"),
+                        is_derived=signal in DERIVED_SIGNALS,
                         default_target_signal=default_target_signal,
                         default_target_label=(
                             get_signal_label(default_target_signal)
@@ -249,6 +252,7 @@ class HealthService:
             range_value=max(1, limit),
             range_unit="points",
             bucket="raw",
+            max_points=max(60, limit),
         )
 
     def get_signal_trend_window(
@@ -257,12 +261,72 @@ class HealthService:
         range_value: int = 6,
         range_unit: str = "hours",
         bucket: str = "raw",
+        max_points: int = 600,
     ) -> SignalTrendResponse:
         self.refresh()
+        base_frame = self._slice_base_frame(range_value=range_value, range_unit=range_unit)
+        return self._build_signal_trend_response(
+            signal=signal,
+            base_frame=base_frame,
+            range_value=range_value,
+            range_unit=range_unit,
+            bucket=bucket,
+            max_points=max_points,
+        )
+
+    def get_multi_signal_trend_window(
+        self,
+        signals: list[str],
+        range_value: int = 6,
+        range_unit: str = "hours",
+        bucket: str = "raw",
+        max_points: int = 600,
+    ) -> MultiSignalTrendResponse:
+        self.refresh()
+        ordered_signals: list[str] = []
+        for signal in signals:
+            normalized_signal = str(signal).strip()
+            if not normalized_signal or normalized_signal in ordered_signals:
+                continue
+            ordered_signals.append(normalized_signal)
+            if len(ordered_signals) >= 6:
+                break
+
+        base_frame = self._slice_base_frame(range_value=range_value, range_unit=range_unit)
+        series = [
+            self._build_signal_trend_response(
+                signal=signal,
+                base_frame=base_frame,
+                range_value=range_value,
+                range_unit=range_unit,
+                bucket=bucket,
+                max_points=max_points,
+            )
+            for signal in ordered_signals
+        ]
+
+        return MultiSignalTrendResponse(
+            signals=ordered_signals,
+            range_unit=range_unit,
+            range_value=range_value,
+            bucket=bucket,
+            correlation_mode="normalized" if len(ordered_signals) > 1 else "single",
+            series=series,
+        )
+
+    def _build_signal_trend_response(
+        self,
+        signal: str,
+        base_frame: pd.DataFrame,
+        range_value: int,
+        range_unit: str,
+        bucket: str,
+        max_points: int,
+    ) -> SignalTrendResponse:
         if (
-            self._feature_frame.empty
-            or signal not in self._feature_frame.columns
-            or not pd.api.types.is_numeric_dtype(self._feature_frame[signal])
+            base_frame.empty
+            or signal not in base_frame.columns
+            or not pd.api.types.is_numeric_dtype(base_frame[signal])
         ):
             return SignalTrendResponse(
                 signal=signal,
@@ -274,11 +338,7 @@ class HealthService:
                 bucket=bucket,
             )
 
-        trend_frame = self._slice_trend_frame(
-            signal=signal,
-            range_value=range_value,
-            range_unit=range_unit,
-        )
+        trend_frame = base_frame.copy()
         effective_bucket = bucket
         bucketed_frame = self._bucketize_trend_frame(
             frame=trend_frame,
@@ -299,6 +359,8 @@ class HealthService:
                 range_value=range_value,
                 bucket=effective_bucket,
             )
+
+        trend_frame = self._downsample_trend_frame(trend_frame, max_points=max_points)
 
         lower_limit, upper_limit, target_value, rules = self._get_signal_limits_and_rules(signal)
         target_signal = TARGET_SIGNAL_BY_SIGNAL.get(signal)
@@ -398,12 +460,7 @@ class HealthService:
         alerts = filtered[:limit]
         return AlertsResponse(count=len(alerts), alerts=alerts)
 
-    def _slice_trend_frame(
-        self,
-        signal: str,
-        range_value: int,
-        range_unit: str,
-    ) -> pd.DataFrame:
+    def _slice_base_frame(self, range_value: int, range_unit: str) -> pd.DataFrame:
         frame = self._feature_frame.sort_values("timestamp").copy()
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
         frame = frame.dropna(subset=["timestamp"])
@@ -422,6 +479,14 @@ class HealthService:
         delta = unit_map.get(range_unit, timedelta(hours=6))
         start_timestamp = latest_timestamp - delta
         return frame[frame["timestamp"] >= start_timestamp].reset_index(drop=True)
+
+    @staticmethod
+    def _downsample_trend_frame(frame: pd.DataFrame, max_points: int) -> pd.DataFrame:
+        if frame.empty or max_points <= 0 or len(frame) <= max_points:
+            return frame.reset_index(drop=True)
+
+        indices = np.linspace(0, len(frame) - 1, num=max_points, dtype=int)
+        return frame.iloc[np.unique(indices)].reset_index(drop=True)
 
     def _bucketize_trend_frame(
         self,
