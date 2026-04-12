@@ -53,6 +53,7 @@ const state = {
   bucket: "hours",
   search: "",
   trendRequestId: 0,
+  expandedDiagnoses: {},
 };
 
 async function fetchJson(url) {
@@ -178,7 +179,12 @@ function ensureSignalSelection() {
   }
 
   const availableSignals = new Set(getCatalogSignals());
-  const nextSelected = [state.signal, ...state.selectedSignals.filter((signal) => signal !== state.signal)];
+  const visibleSignals = new Set(visible.map((item) => item.signal));
+  const retainedSignals = state.selectedSignals.filter((signal) => {
+    if (!availableSignals.has(signal)) return false;
+    return state.subsystem === "all" ? true : visibleSignals.has(signal);
+  });
+  const nextSelected = [state.signal, ...retainedSignals.filter((signal) => signal !== state.signal)];
   state.selectedSignals = nextSelected
     .filter((signal, index) => availableSignals.has(signal) && nextSelected.indexOf(signal) === index)
     .slice(0, MAX_CHART_SIGNALS);
@@ -188,29 +194,40 @@ function ensureSignalSelection() {
   }
 }
 
+function setSelectedSignals(signals, subsystem = null) {
+  if (subsystem) {
+    state.subsystem = subsystem;
+  }
+
+  const availableSignals = new Set(getCatalogSignals());
+  const normalizedSignals = safeArray(signals)
+    .map((signal) => String(signal || "").trim())
+    .filter((signal, index, array) => signal && availableSignals.has(signal) && array.indexOf(signal) === index)
+    .slice(0, MAX_CHART_SIGNALS);
+
+  if (normalizedSignals.length) {
+    state.selectedSignals = normalizedSignals;
+    state.signal = normalizedSignals[0];
+    return;
+  }
+
+  ensureSignalSelection();
+}
+
 function isChartSignal(signal) {
   return state.selectedSignals.includes(signal);
 }
 
 function setPrimarySignal(signal, subsystem = null) {
-  if (subsystem) {
-    state.subsystem = subsystem;
-  }
-  state.signal = signal;
-  ensureSignalSelection();
+  setSelectedSignals([signal, ...state.selectedSignals.filter((item) => item !== signal)], subsystem);
 }
 
 function toggleChartSignal(signal) {
-  if (!signal || signal === state.signal) return;
-  if (state.selectedSignals.includes(signal)) {
-    state.selectedSignals = state.selectedSignals.filter((item) => item !== signal);
-    return;
-  }
-  if (state.selectedSignals.length >= MAX_CHART_SIGNALS) {
-    state.selectedSignals = [state.signal, ...state.selectedSignals.slice(1, MAX_CHART_SIGNALS - 1), signal];
-    return;
-  }
-  state.selectedSignals = [...state.selectedSignals, signal];
+  if (!signal) return;
+  const nextSelected = state.selectedSignals.includes(signal)
+    ? state.selectedSignals.filter((item) => item !== signal)
+    : [...state.selectedSignals, signal];
+  setSelectedSignals(nextSelected.length ? nextSelected : [state.signal]);
 }
 
 function getTargetLabel(signalMeta, fallback = "Setpoint") {
@@ -335,9 +352,9 @@ function syncFilterInputs() {
   document.getElementById("range-value").value = String(state.rangeValue);
   document.getElementById("range-unit").value = state.rangeUnit;
   document.getElementById("bucket-select").value = state.bucket;
-  if (state.signal) {
-    document.getElementById("signal-select").value = state.signal;
-  }
+  Array.from(document.getElementById("signal-multiselect").options).forEach((option) => {
+    option.selected = state.selectedSignals.includes(option.value);
+  });
 }
 
 function renderSubsystemPills() {
@@ -363,9 +380,9 @@ function renderPresetButtons() {
 }
 
 function populateSelects() {
-  const signalSelect = document.getElementById("signal-select");
+  const signalSelect = document.getElementById("signal-multiselect");
   signalSelect.innerHTML = getVisibleSignals().map((item) => {
-    const suffix = item.is_setpoint ? " [meta]" : item.is_derived ? " [calculado]" : "";
+    const suffix = item.is_setpoint ? " [meta]" : item.is_derived ? " [calc]" : "";
     return `<option value="${item.signal}">${item.label}${suffix} (${friendlySubsystem(item.subsystem)})</option>`;
   }).join("");
 
@@ -386,13 +403,11 @@ function renderSelectedSignals() {
 
   container.innerHTML = state.selectedSignals.map((signal, index) => {
     const meta = getSignalMeta(signal);
-    const label = meta?.label || signal;
-    const prefix = index === 0 ? "principal" : "correlacao";
     return `
       <button class="selection-chip ${index === 0 ? "primary" : "secondary"}" data-select-signal="${signal}" type="button">
-        <span>${label}</span>
-        <small>${prefix}</small>
-        ${index > 0 ? `<span class="chip-remove" data-remove-signal="${signal}">x</span>` : ""}
+        <span>${meta?.label || signal}</span>
+        <small>${index === 0 ? "principal" : "extra"}</small>
+        ${state.selectedSignals.length > 1 ? `<span class="chip-remove" data-remove-signal="${signal}">x</span>` : ""}
       </button>
     `;
   }).join("");
@@ -404,8 +419,7 @@ function renderTopbar() {
   const modeLabel = [snapshot.st_oper, snapshot.st_carga_oper].filter(Boolean).join(" - ") || "Sem modo identificado";
   document.getElementById("hero-status").textContent = modeLabel;
   document.getElementById("hero-description").textContent =
-    `Base carregada com ${formatNumber(status.history_rows, 0)} leituras entre ${formatDateTime(status.earliest_timestamp)} e ${formatDateTime(status.latest_timestamp)}. ` +
-    `${formatNumber(status.active_alerts, 0)} alertas ativos agora e ${formatNumber(status.recent_alert_events, 0)} eventos detectados no historico.`;
+    `Leitura consolidada com ${formatNumber(status.history_rows, 0)} pontos historicos, ${formatNumber(status.active_alerts, 0)} alertas ativos e ${formatNumber(status.recent_alert_events, 0)} eventos recentes.`;
   document.getElementById("badge-source").textContent = `Fonte: ${status.data_source || "--"}`;
   document.getElementById("badge-refresh").textContent = `Atualizacao: ${formatDateTime(status.last_refresh_at)}`;
   document.getElementById("badge-range").textContent = `Cobertura: ${formatDateTime(status.earliest_timestamp)} ate ${formatDateTime(status.latest_timestamp)}`;
@@ -481,99 +495,43 @@ function buildDiagnosisInline(alert) {
   const diagnosis = alert.prescriptive_diagnosis;
   if (!diagnosis) return "";
 
-  const topHypotheses = safeArray(diagnosis.hipoteses).slice(0, 2);
-  const actions = safeArray(diagnosis.acoes_recomendadas).slice(0, 2);
+  const isOpen = Boolean(state.expandedDiagnoses[alert.alert_id]);
+  const buildList = (items, formatter) => {
+    const rows = safeArray(items).slice(0, 6);
+    if (!rows.length) {
+      return '<div class="stack-meta">Sem itens adicionais.</div>';
+    }
+    return `<ul class="diagnosis-list">${rows.map((item) => `<li>${formatter(item)}</li>`).join("")}</ul>`;
+  };
+
   return `
     <div class="alert-diagnosis">
-      <div class="diagnosis-inline-grid">
-        <div class="diagnosis-inline-card">
-          <strong>interno</strong>
-          <span>${formatNumber(diagnosis.score_interno, 0)}</span>
+      <div class="diagnosis-head">
+        <div class="diagnosis-scores">
+          <span class="diagnosis-score-tag">criticidade: ${diagnosis.criticidade_base || "--"}</span>
+          <span class="diagnosis-score-tag">interno ${formatNumber(diagnosis.score_interno, 0)}</span>
+          <span class="diagnosis-score-tag">periferico ${formatNumber(diagnosis.score_periferico, 0)}</span>
         </div>
-        <div class="diagnosis-inline-card">
-          <strong>periferico</strong>
-          <span>${formatNumber(diagnosis.score_periferico, 0)}</span>
+        <button class="diagnosis-toggle" data-toggle-diagnosis="${alert.alert_id}" type="button">
+          ${isOpen ? "Retrair" : "Expandir"}
+        </button>
+      </div>
+      <div class="diagnosis-panel ${isOpen ? "open" : ""}">
+        <div class="diagnosis-section">
+          <strong>Hipoteses</strong>
+          ${buildList(diagnosis.hipoteses, (item) => `${item.causa} (${item.tipo} | score ${formatNumber(item.score, 0)})`)}
+        </div>
+        <div class="diagnosis-section">
+          <strong>Acoes</strong>
+          ${buildList(diagnosis.acoes_recomendadas, (item) => item)}
+        </div>
+        <div class="diagnosis-section">
+          <strong>Observacoes</strong>
+          ${buildList(diagnosis.observacoes, (item) => item)}
         </div>
       </div>
-      <div class="stack-meta">Hipoteses: ${topHypotheses.map((item) => item.causa).join(" | ") || "--"}</div>
-      <div class="stack-meta">Acoes: ${actions.join(" | ") || "--"}</div>
     </div>
   `;
-}
-
-function renderDiagnosisPanel() {
-  const alert = getDiagnosisAlert();
-  const scoreGrid = document.getElementById("diagnosis-score-grid");
-  const flagsContainer = document.getElementById("diagnosis-flags");
-  const hypothesesContainer = document.getElementById("diagnosis-hypotheses");
-  const actionsContainer = document.getElementById("diagnosis-actions");
-  const observationsContainer = document.getElementById("diagnosis-observations");
-
-  if (!alert || !alert.prescriptive_diagnosis) {
-    document.getElementById("diagnosis-caption").textContent = "Nenhum alerta com prescricao foi encontrado para o foco atual.";
-    scoreGrid.innerHTML = `
-      <div class="diagnosis-score-card"><strong>criticidade base</strong><div class="diagnosis-score-value">--</div></div>
-      <div class="diagnosis-score-card"><strong>score interno</strong><div class="diagnosis-score-value">--</div></div>
-      <div class="diagnosis-score-card"><strong>score periferico</strong><div class="diagnosis-score-value">--</div></div>
-    `;
-    flagsContainer.innerHTML = '<div class="empty-state">Sem flags prescritivas para mostrar.</div>';
-    hypothesesContainer.innerHTML = '<div class="empty-state">Selecione um indicador com alerta prescritivo para ver o ranking de hipoteses.</div>';
-    actionsContainer.innerHTML = '<div class="empty-state">As acoes recomendadas aparecem quando houver um diagnostico prescritivo associado.</div>';
-    observationsContainer.innerHTML = '<div class="empty-state">Observacoes de confiabilidade e instrumentacao aparecerao aqui.</div>';
-    return;
-  }
-
-  const diagnosis = alert.prescriptive_diagnosis;
-  document.getElementById("diagnosis-caption").textContent =
-    `${alert.title} | ${severityLabel(alert.severity)} | ultima ocorrencia em ${formatDateTime(alert.last_seen_at)}`;
-  scoreGrid.innerHTML = `
-    <div class="diagnosis-score-card">
-      <strong>criticidade base</strong>
-      <div class="diagnosis-score-value">${diagnosis.criticidade_base || "--"}</div>
-    </div>
-    <div class="diagnosis-score-card">
-      <strong>score interno</strong>
-      <div class="diagnosis-score-value">${formatNumber(diagnosis.score_interno, 0)}</div>
-    </div>
-    <div class="diagnosis-score-card">
-      <strong>score periferico</strong>
-      <div class="diagnosis-score-value">${formatNumber(diagnosis.score_periferico, 0)}</div>
-    </div>
-  `;
-
-  flagsContainer.innerHTML = safeArray(diagnosis.flags_ativas).length
-    ? safeArray(diagnosis.flags_ativas).map((flag) => `<span class="selection-chip secondary">${flag}</span>`).join("")
-    : '<div class="empty-state">Nenhuma flag ativa foi consolidada para este diagnostico.</div>';
-
-  hypothesesContainer.innerHTML = safeArray(diagnosis.hipoteses).length
-    ? safeArray(diagnosis.hipoteses).slice(0, 8).map((item) => `
-        <div class="stack-item">
-          <div class="stack-top">
-            <div>
-              <div class="stack-title-main">${item.causa}</div>
-              <div class="stack-meta">${item.tipo}</div>
-            </div>
-            <span class="severity-pill ${item.tipo === "interno" ? "severity-high" : "severity-medium"}">${formatNumber(item.score, 0)}</span>
-          </div>
-        </div>
-      `).join("")
-    : '<div class="empty-state">O motor prescritivo nao conseguiu ranquear hipoteses para este alerta.</div>';
-
-  actionsContainer.innerHTML = safeArray(diagnosis.acoes_recomendadas).length
-    ? safeArray(diagnosis.acoes_recomendadas).map((item) => `
-        <div class="stack-item">
-          <div class="stack-title-main">${item}</div>
-        </div>
-      `).join("")
-    : '<div class="empty-state">Sem acoes recomendadas para este caso.</div>';
-
-  observationsContainer.innerHTML = safeArray(diagnosis.observacoes).length
-    ? safeArray(diagnosis.observacoes).map((item) => `
-        <div class="stack-item">
-          <div class="stack-meta">${item}</div>
-        </div>
-      `).join("")
-    : '<div class="empty-state">Nao ha observacoes adicionais para este diagnostico.</div>';
 }
 
 function renderContextPanel() {
@@ -585,13 +543,11 @@ function renderContextPanel() {
   const targetLabel = trend?.target_label || getTargetLabel(signalMeta);
   const targetValue = trend?.summary?.target_current ?? getTargetValue(signalMeta, values, trend?.target_value);
   const cards = [
-    ["Indicador principal", signalMeta?.label || "--"],
+    ["Indicador em foco", signalMeta?.label || "--"],
     ["Valor atual", formatMaybe(trend?.summary?.latest, unit)],
     [targetLabel, formatMaybe(targetValue, unit)],
-    ["Limite inferior", formatMaybe(trend?.lower_limit, unit)],
-    ["Limite superior", formatMaybe(trend?.upper_limit, unit)],
+    ["Faixa operacional", formatOperatingRange(trend?.lower_limit, trend?.upper_limit, unit)],
     ["Turno", values.ds_turno || "--"],
-    ["PLC", String(values.st_plc ?? "--")],
     ["Status", formatMaybe(values.status)],
   ];
 
@@ -738,27 +694,24 @@ function renderTrendSummary() {
   `).join("");
 }
 
-function renderTrendLegend() {
-  document.getElementById("trend-legend").innerHTML = `
+function renderTrendLegend(series = [], mode = "single") {
+  const container = document.getElementById("trend-legend");
+  if (mode === "correlation") {
+    container.innerHTML = series.map((item) => `
+      <span><i class="legend-line" style="background:${colorForSignal(item.signal)}"></i>${item.label}</span>
+    `).join("");
+    return;
+  }
+
+  container.innerHTML = `
     <span><i class="legend-line legend-actual"></i>Valor real</span>
-    <span><i class="legend-line legend-target"></i>Setpoint real</span>
+    <span><i class="legend-line legend-target"></i>Setpoint</span>
     <span><i class="legend-line legend-upper"></i>Limite superior</span>
     <span><i class="legend-line legend-lower"></i>Limite inferior</span>
     <span><i class="legend-line legend-mean"></i>Media 15 min</span>
     <span><i class="legend-line legend-ewma"></i>EWMA</span>
-    <span><i class="legend-dot legend-alert"></i>Eventos de alerta</span>
+    <span><i class="legend-dot legend-alert"></i>Eventos</span>
   `;
-}
-
-function renderCorrelationLegend(series) {
-  const container = document.getElementById("correlation-legend");
-  if (series.length <= 1) {
-    container.innerHTML = '<span><i class="legend-line legend-actual"></i>Adicione outros indicadores para enxergar correlacao normalizada.</span>';
-    return;
-  }
-  container.innerHTML = series.map((item) => `
-    <span><i class="legend-line" style="background:${colorForSignal(item.signal)}"></i>${item.label}</span>
-  `).join("");
 }
 
 function buildPath(points, xKey, yKey) {
@@ -779,17 +732,12 @@ function getMarkerColor(severity) {
 
 function setTrendLoading() {
   document.getElementById("trend-title").textContent = "Atualizando leitura temporal...";
-  document.getElementById("trend-subtitle").textContent = "Buscando a serie temporal para os indicadores selecionados.";
-  document.getElementById("trend-mode-note").textContent = "Atualizando o foco principal e as correlacoes.";
-  document.getElementById("primary-chart-note").textContent = "Recalculando a leitura principal.";
-  document.getElementById("correlation-subtitle").textContent = "Recalculando as correlacoes.";
+  document.getElementById("trend-subtitle").textContent = "Recalculando curvas e correlacoes.";
   document.getElementById("trend-chart").innerHTML = "";
-  document.getElementById("correlation-chart").innerHTML = "";
   document.getElementById("chart-tooltip").classList.remove("visible");
-  document.getElementById("correlation-tooltip").classList.remove("visible");
 }
 
-function buildGridLines(width, height, margin, minValue, maxValue) {
+function buildGridLines(width, height, margin, minValue, maxValue, formatter = formatNumber) {
   const lines = [];
   const tickCount = 4;
   for (let step = 0; step <= tickCount; step += 1) {
@@ -797,7 +745,7 @@ function buildGridLines(width, height, margin, minValue, maxValue) {
     const value = maxValue - ((maxValue - minValue) / tickCount) * step;
     lines.push(`
       <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-dasharray="4 8" />
-      <text x="${margin.left - 10}" y="${y + 4}" fill="rgba(174,181,192,0.95)" font-size="12" text-anchor="end" font-family="Aptos, Segoe UI, Arial, sans-serif">${formatNumber(value)}</text>
+      <text x="${margin.left - 10}" y="${y + 4}" fill="rgba(174,181,192,0.95)" font-size="12" text-anchor="end" font-family="Aptos, Segoe UI, Arial, sans-serif">${formatter(value)}</text>
     `);
   }
   return lines.join("");
@@ -827,27 +775,23 @@ function renderPrimaryChart() {
   const points = safeArray(trend?.points);
   const title = document.getElementById("trend-title");
   const subtitle = document.getElementById("trend-subtitle");
-  const modeNote = document.getElementById("trend-mode-note");
-  const chartNote = document.getElementById("primary-chart-note");
 
   if (!trend || !points.length) {
     title.textContent = "Sem dados suficientes para o indicador atual";
     subtitle.textContent = "A serie temporal ficou vazia para a janela escolhida.";
-    modeNote.textContent = "Leitura principal indisponivel.";
-    chartNote.textContent = "Nenhum ponto retornado para o indicador em foco.";
     svg.innerHTML = "";
     tooltip.classList.remove("visible");
+    renderTrendLegend([], "single");
     return;
   }
 
-  title.textContent = `${trend.label} (${trend.signal})`;
-  subtitle.textContent = `${friendlySubsystem(trend.subsystem)} | ${points.length} pontos | janela: ${trend.range_value} ${trend.range_unit} | agrupamento: ${trend.bucket}`;
-  modeNote.textContent = `Principal: ${trend.label} | correlacionando ${Math.max(0, state.selectedSignals.length - 1)} indicador(es)`;
-  chartNote.textContent = "Meta, limites e eventos do indicador em foco.";
+  title.textContent = `${trend.label}`;
+  subtitle.textContent = `${friendlySubsystem(trend.subsystem)} | ${points.length} pontos | janela ${trend.range_value} ${trend.range_unit} | agrupamento ${trend.bucket}`;
+  renderTrendLegend([trend], "single");
 
-  const width = 960;
-  const height = 430;
-  const margin = { top: 24, right: 26, bottom: 48, left: 78 };
+  const width = 1040;
+  const height = 380;
+  const margin = { top: 22, right: 24, bottom: 46, left: 72 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
 
@@ -901,7 +845,7 @@ function renderPrimaryChart() {
   const lastPoint = chartPoints[chartPoints.length - 1];
   const bandMarkup = (lastPoint.lower_limit !== null && lastPoint.lower_limit !== undefined
     && lastPoint.upper_limit !== null && lastPoint.upper_limit !== undefined)
-    ? `<rect x="${margin.left}" y="${yScale(Number(lastPoint.upper_limit))}" width="${plotWidth}" height="${yScale(Number(lastPoint.lower_limit)) - yScale(Number(lastPoint.upper_limit))}" fill="rgba(57,199,194,0.08)" rx="16" />`
+    ? `<rect x="${margin.left}" y="${yScale(Number(lastPoint.upper_limit))}" width="${plotWidth}" height="${yScale(Number(lastPoint.lower_limit)) - yScale(Number(lastPoint.upper_limit))}" fill="rgba(57,199,194,0.08)" rx="14" />`
     : "";
 
   const markerAlerts = getSignalAlertEvents(trend.signal).filter((alert) => {
@@ -919,8 +863,8 @@ function renderPrimaryChart() {
     const y = nearestPoint?.y ?? margin.top + 20;
     const color = getMarkerColor(alert.severity);
     return `
-      <line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${color}" stroke-opacity="0.22" stroke-dasharray="4 8" />
-      <circle cx="${x}" cy="${y}" r="5" fill="${color}" stroke="#101316" stroke-width="2" />
+      <line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${color}" stroke-opacity="0.18" stroke-dasharray="4 8" />
+      <circle cx="${x}" cy="${y}" r="4.5" fill="${color}" stroke="#0e141a" stroke-width="2" />
     `;
   }).join("");
 
@@ -930,13 +874,13 @@ function renderPrimaryChart() {
     ${buildGridLines(width, height, margin, minValue, maxValue)}
     <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="rgba(255,255,255,0.12)" />
     ${markerMarkup}
-    <path d="${buildPath(chartPoints, "x", "targetY")}" fill="none" stroke="#f0c75a" stroke-width="2.2" stroke-dasharray="8 7" stroke-linecap="round" />
-    <path d="${buildPath(chartPoints, "x", "upperY")}" fill="none" stroke="#f29a56" stroke-width="1.8" stroke-dasharray="4 6" />
-    <path d="${buildPath(chartPoints, "x", "lowerY")}" fill="none" stroke="#79d08e" stroke-width="1.8" stroke-dasharray="4 6" />
-    <path d="${buildPath(chartPoints, "x", "meanY")}" fill="none" stroke="#6fa3ff" stroke-width="2.2" />
-    <path d="${buildPath(chartPoints, "x", "ewmaY")}" fill="none" stroke="#c16f39" stroke-width="2.1" stroke-dasharray="6 6" />
-    <path d="${buildPath(chartPoints, "x", "y")}" fill="none" stroke="#39c7c2" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="${lastPoint.x}" cy="${lastPoint.y ?? margin.top + plotHeight / 2}" r="5.5" fill="#39c7c2" />
+    <path d="${buildPath(chartPoints, "x", "targetY")}" fill="none" stroke="#f0c65a" stroke-width="2" stroke-dasharray="8 7" stroke-linecap="round" />
+    <path d="${buildPath(chartPoints, "x", "upperY")}" fill="none" stroke="#ef9a56" stroke-width="1.8" stroke-dasharray="4 6" />
+    <path d="${buildPath(chartPoints, "x", "lowerY")}" fill="none" stroke="#77d28f" stroke-width="1.8" stroke-dasharray="4 6" />
+    <path d="${buildPath(chartPoints, "x", "meanY")}" fill="none" stroke="#78a5ff" stroke-width="2" />
+    <path d="${buildPath(chartPoints, "x", "ewmaY")}" fill="none" stroke="#c16f39" stroke-width="2" stroke-dasharray="6 6" />
+    <path d="${buildPath(chartPoints, "x", "y")}" fill="none" stroke="#39c7c2" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${lastPoint.x}" cy="${lastPoint.y ?? margin.top + plotHeight / 2}" r="5" fill="#39c7c2" />
     ${buildXTicks(minTs, maxTs, width, height, margin, trend.range_unit, trend.bucket)}
   `;
 
@@ -991,29 +935,28 @@ function normalizeSeries(series) {
 }
 
 function renderCorrelationChart() {
-  const svg = document.getElementById("correlation-chart");
-  const tooltip = document.getElementById("correlation-tooltip");
-  const subtitle = document.getElementById("correlation-subtitle");
+  const svg = document.getElementById("trend-chart");
+  const tooltip = document.getElementById("chart-tooltip");
   const series = state.selectedSignals
     .map((signal) => getTrendSeries(signal))
     .filter((item) => item && safeArray(item.points).length);
 
-  renderCorrelationLegend(series);
-
   if (!series.length) {
-    subtitle.textContent = "Nenhuma serie temporal foi retornada para os indicadores selecionados.";
+    document.getElementById("trend-title").textContent = "Sem dados suficientes para a selecao atual";
+    document.getElementById("trend-subtitle").textContent = "Nenhuma serie temporal foi retornada para os indicadores selecionados.";
     svg.innerHTML = "";
     tooltip.classList.remove("visible");
     return;
   }
 
-  subtitle.textContent = series.length > 1
-    ? "Curvas normalizadas para comparar comportamento relativo entre indicadores com unidades diferentes."
-    : "Selecione mais indicadores para habilitar a comparacao normalizada.";
+  document.getElementById("trend-title").textContent = `Correlacao de ${series.length} indicadores`;
+  document.getElementById("trend-subtitle").textContent =
+    "Curvas normalizadas na mesma escala para comparar comportamento relativo entre indicadores com unidades diferentes.";
+  renderTrendLegend(series, "correlation");
 
-  const width = 960;
-  const height = 260;
-  const margin = { top: 20, right: 26, bottom: 42, left: 60 };
+  const width = 1040;
+  const height = 380;
+  const margin = { top: 22, right: 24, bottom: 46, left: 72 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
 
@@ -1042,10 +985,25 @@ function renderCorrelationChart() {
     })),
   }));
 
+  const primary = getPrimaryTrend();
+  const markerAlerts = primary
+    ? getSignalAlertEvents(primary.signal).filter((alert) => {
+        const ts = new Date(alert.last_seen_at).getTime();
+        return Number.isFinite(ts) && ts >= minTs && ts <= maxTs;
+      }).slice(0, 80)
+    : [];
+
+  const markerMarkup = markerAlerts.map((alert) => {
+    const ts = new Date(alert.last_seen_at).getTime();
+    const x = xScale(ts);
+    return `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${getMarkerColor(alert.severity)}" stroke-opacity="0.12" stroke-dasharray="4 8" />`;
+  }).join("");
+
   svg.innerHTML = `
     <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
-    ${buildGridLines(width, height, margin, 0, 100)}
+    ${buildGridLines(width, height, margin, 0, 100, (value) => `${formatNumber(value, 0)}%`)}
     <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="rgba(255,255,255,0.12)" />
+    ${markerMarkup}
     ${normalizedSeries.map((item) => `
       <path d="${buildPath(item.normalizedPoints, "x", "y")}" fill="none" stroke="${item.color}" stroke-width="${item.signal === state.signal ? 3.3 : 2.4}" stroke-linecap="round" stroke-linejoin="round" />
     `).join("")}
@@ -1061,21 +1019,21 @@ function renderCorrelationChart() {
         if (!best) return point;
         return Math.abs(point.x - relativeX) < Math.abs(best.x - relativeX) ? point : best;
       }, null);
-      return {
+      return nearest ? {
         label: item.label,
         unit: item.unit,
         color: item.color,
-        value: nearest?.value,
-        normalized: nearest?.normalized,
-        timestamp: nearest?.timestamp,
-      };
-    }).filter((item) => item.timestamp);
+        value: nearest.value,
+        normalized: nearest.normalized,
+        timestamp: nearest.timestamp,
+      } : null;
+    }).filter(Boolean);
 
     if (!summaries.length) return;
     tooltip.innerHTML = `
       <div><strong>${formatDateTime(summaries[0].timestamp)}</strong></div>
       ${summaries.map((item) => `
-        <div style="color:${item.color}">${item.label}: ${formatMaybe(item.value, item.unit || "")} | indice ${formatNumber(item.normalized)}</div>
+        <div style="color:${item.color}">${item.label}: ${formatMaybe(item.value, item.unit || "")} | indice ${formatNumber(item.normalized, 0)}%</div>
       `).join("")}
     `;
     tooltip.style.left = `${event.clientX - bounds.left}px`;
@@ -1085,10 +1043,12 @@ function renderCorrelationChart() {
 }
 
 function renderCharts() {
-  renderTrendLegend();
   renderTrendSummary();
+  if (state.selectedSignals.length > 1) {
+    renderCorrelationChart();
+    return;
+  }
   renderPrimaryChart();
-  renderCorrelationChart();
 }
 
 function bindDynamicEvents() {
@@ -1096,16 +1056,11 @@ function bindDynamicEvents() {
     if (button.dataset.bound === "1") return;
     button.dataset.bound = "1";
     button.addEventListener("click", async () => {
-      const previousSignal = state.signal;
       state.subsystem = button.dataset.subsystem;
       ensureSignalSelection();
       renderAll();
-      if (previousSignal !== state.signal) {
-        setTrendLoading();
-        await loadTrends();
-      } else {
-        renderCharts();
-      }
+      setTrendLoading();
+      await loadTrends();
     });
   });
 
@@ -1128,16 +1083,11 @@ function bindDynamicEvents() {
     if (element.dataset.bound === "1") return;
     element.dataset.bound = "1";
     element.addEventListener("click", async () => {
-      const previousSignal = state.signal;
       state.subsystem = element.dataset.scoreSubsystem;
       ensureSignalSelection();
       renderAll();
-      if (previousSignal !== state.signal) {
-        setTrendLoading();
-        await loadTrends();
-      } else {
-        renderCharts();
-      }
+      setTrendLoading();
+      await loadTrends();
     });
   });
 
@@ -1148,14 +1098,10 @@ function bindDynamicEvents() {
       const removeSignal = event.target.dataset.removeSignal;
       if (removeSignal) {
         event.stopPropagation();
-        state.selectedSignals = state.selectedSignals.filter((signal) => signal !== removeSignal);
-        ensureSignalSelection();
-        renderAll();
-        setTrendLoading();
-        await loadTrends();
-        return;
+        toggleChartSignal(removeSignal);
+      } else {
+        setPrimarySignal(button.dataset.selectSignal);
       }
-      setPrimarySignal(button.dataset.selectSignal);
       renderAll();
       setTrendLoading();
       await loadTrends();
@@ -1190,12 +1136,24 @@ function bindDynamicEvents() {
   document.querySelectorAll("[data-toggle-signal]").forEach((button) => {
     if (button.dataset.bound === "1") return;
     button.dataset.bound = "1";
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
       toggleChartSignal(button.dataset.toggleSignal);
-      ensureSignalSelection();
       renderAll();
       setTrendLoading();
       await loadTrends();
+    });
+  });
+
+  document.querySelectorAll("[data-toggle-diagnosis]").forEach((button) => {
+    if (button.dataset.bound === "1") return;
+    button.dataset.bound = "1";
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const alertId = button.dataset.toggleDiagnosis;
+      state.expandedDiagnoses[alertId] = !state.expandedDiagnoses[alertId];
+      renderAlertPanels();
+      bindDynamicEvents();
     });
   });
 }
@@ -1209,7 +1167,6 @@ function renderAll() {
   renderSelectedSignals();
   renderOperationalPanel();
   renderScorePanel();
-  renderDiagnosisPanel();
   renderContextPanel();
   renderAlertPanels();
   renderSignalExplorer();
@@ -1255,7 +1212,6 @@ async function loadTrends() {
     document.getElementById("trend-title").textContent = "Falha ao atualizar o grafico";
     document.getElementById("trend-subtitle").textContent = String(error);
     document.getElementById("trend-chart").innerHTML = "";
-    document.getElementById("correlation-chart").innerHTML = "";
   }
 }
 
@@ -1290,8 +1246,9 @@ async function refreshDashboard() {
 }
 
 function attachEvents() {
-  document.getElementById("signal-select").addEventListener("change", async (event) => {
-    setPrimarySignal(event.target.value);
+  document.getElementById("signal-multiselect").addEventListener("change", async (event) => {
+    const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
+    setSelectedSignals(selected.length ? selected : [state.signal]);
     renderAll();
     setTrendLoading();
     await loadTrends();
@@ -1301,7 +1258,7 @@ function attachEvents() {
     state.severity = document.getElementById("severity-select").value;
     renderOperationalPanel();
     renderScorePanel();
-    renderDiagnosisPanel();
+    renderContextPanel();
     renderAlertPanels();
     renderSignalExplorer();
     renderCharts();
@@ -1309,16 +1266,11 @@ function attachEvents() {
   });
 
   document.getElementById("search-input").addEventListener("input", async () => {
-    const previousSignal = state.signal;
     state.search = document.getElementById("search-input").value.trim();
     ensureSignalSelection();
     renderAll();
-    if (previousSignal !== state.signal) {
-      setTrendLoading();
-      await loadTrends();
-    } else {
-      renderCharts();
-    }
+    setTrendLoading();
+    await loadTrends();
   });
 
   document.getElementById("range-value").addEventListener("change", async () => {
