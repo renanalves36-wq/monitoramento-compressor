@@ -71,7 +71,7 @@ def get_signal_trend(
 
 @router.get("/trends", response_model=MultiSignalTrendResponse)
 def get_multi_signal_trend(
-    signals: list[str] = Query(..., min_length=3),
+    signals: list[str] = Query(...),
     range_value: int = Query(default=6, ge=1, le=5000),
     range_unit: str = Query(default="hours", pattern="^(points|minutes|hours|days)$"),
     bucket: str = Query(default="raw", pattern="^(raw|minutes|hours|days)$"),

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from app.api.routes_status import get_multi_signal_trend
 from app.config import Settings
 from app.services.health_service import HealthService
 from app.storage.alert_repository import AlertRepository
@@ -123,6 +124,40 @@ class TrendLimitsTests(unittest.TestCase):
         self.assertEqual(len(response.series), 2)
         self.assertEqual(response.series[0].signal, "pv_pres_sistema_bar")
         self.assertEqual(response.series[1].signal, "pv_temp_oleo_lubrificacao_c")
+
+    def test_status_trends_route_accepts_single_signal(self) -> None:
+        start = datetime(2026, 4, 9, 7, 0, 0)
+        self.service._feature_frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": start,
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_pres_sistema_bar": 6.8,
+                    "sp_pres_sistema_bar": 6.6,
+                },
+                {
+                    "timestamp": start + timedelta(minutes=1),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_pres_sistema_bar": 7.0,
+                    "sp_pres_sistema_bar": 6.7,
+                },
+            ]
+        )
+        self.service._history_frame = self.service._feature_frame.copy()
+        self.service._last_refresh_at = utc_now()
+
+        response = get_multi_signal_trend(
+            signals=["pv_pres_sistema_bar"],
+            range_value=2,
+            range_unit="points",
+            bucket="raw",
+            max_points=200,
+            service=self.service,
+        )
+
+        self.assertEqual(response.signals, ["pv_pres_sistema_bar"])
+        self.assertEqual(len(response.series), 1)
+        self.assertEqual(response.series[0].signal, "pv_pres_sistema_bar")
 
 
 if __name__ == "__main__":
