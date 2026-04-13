@@ -81,6 +81,16 @@ function severityClass(severity) {
   return `severity-${String(severity || "all").toLowerCase()}`;
 }
 
+function layerLabel(layer) {
+  const map = {
+    fixed_rule: "regra fixa",
+    trend: "analise estatistica",
+    operational_anomaly: "anomalia operacional",
+    predictive_statistics: "predicao estatistica",
+  };
+  return map[String(layer || "").toLowerCase()] || String(layer || "--");
+}
+
 function severityWeight(severity) {
   const map = { low: 1, medium: 2, high: 3, critical: 4 };
   return map[String(severity || "").toLowerCase()] || 0;
@@ -263,6 +273,16 @@ function formatOperatingRange(lowerLimit, upperLimit, unit = "") {
     return `a partir de ${lowerText}`;
   }
   return `ate ${upperText}`;
+}
+
+function featureLabel(feature) {
+  const map = {
+    slope_15m: "slope 15 min",
+    slope_1h: "slope 1 h",
+    zscore_1h: "z-score 1 h",
+    ewma_gap_abs: "desvio da EWMA",
+  };
+  return map[String(feature || "").toLowerCase()] || String(feature || "--");
 }
 
 function countAlertsForSignal(signal, alerts) {
@@ -641,16 +661,40 @@ function renderAlertList(containerId, alerts, emptyText, counterId) {
           <div class="stack-top">
             <div>
               <div class="stack-title-main">${alert.title}</div>
-              <div class="stack-meta">${friendlySubsystem(alert.subsystem)} | ${alert.signal || "--"} | ${alert.rule_id}</div>
+              <div class="stack-meta">${friendlySubsystem(alert.subsystem)} | ${alert.signal || "--"} | ${layerLabel(alert.layer)} | ${alert.rule_id}</div>
             </div>
             <span class="severity-pill ${severityClass(alert.severity)}">${severityLabel(alert.severity)}</span>
           </div>
           <div class="stack-meta">${alert.message}</div>
-          <div class="stack-footer">Valor: ${formatMaybe(alert.current_value)} | Ultima ocorrencia: ${formatDateTime(alert.last_seen_at)}</div>
+          ${buildAlertFooter(alert)}
           ${buildDiagnosisInline(alert)}
         </div>
       `).join("")
     : `<div class="empty-state">${emptyText}</div>`;
+}
+
+function buildAlertFooter(alert) {
+  const metadata = alert.metadata || {};
+  if (alert.layer === "trend" && metadata.feature) {
+    return `
+      <div class="stack-footer">
+        Valor do sinal: ${formatMaybe(metadata.signal_value ?? alert.current_value)}
+        | indice estatistico ${featureLabel(metadata.feature)}: ${formatMaybe(metadata.feature_value)}
+        | ultima ocorrencia: ${formatDateTime(alert.last_seen_at)}
+      </div>
+    `;
+  }
+  if (alert.layer === "predictive_statistics" && alert.predictive_diagnosis) {
+    return `
+      <div class="stack-footer">
+        Valor atual: ${formatMaybe(alert.current_value)}
+        | confianca: ${formatNumber((alert.predictive_diagnosis.confidence || 0) * 100, 0)}%
+        | evento previsto: ${alert.predictive_diagnosis.predicted_event === "possible_trip" ? "possivel trip" : "alarme critico"}
+        | horizonte: ${formatNumber(alert.predictive_diagnosis.forecast_minutes, 0)} min
+      </div>
+    `;
+  }
+  return `<div class="stack-footer">Valor: ${formatMaybe(alert.current_value)} | Ultima ocorrencia: ${formatDateTime(alert.last_seen_at)}</div>`;
 }
 
 function renderAlertPanels() {

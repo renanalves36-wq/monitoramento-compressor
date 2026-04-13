@@ -210,6 +210,7 @@ class AlertService:
                 continue
 
             if self._condition_triggered(rule=rule, value=float(feature_value)):
+                raw_signal_value = latest.get(rule["signal"])
                 alerts.append(
                     self._build_alert(
                         rule_id=rule["rule_id"],
@@ -219,11 +220,19 @@ class AlertService:
                         severity=rule["severity"],
                         title=rule["title"],
                         message=rule["message"],
-                        current_value=float(feature_value),
+                        current_value=(
+                            None if pd.isna(raw_signal_value) else self._normalize_value(raw_signal_value)
+                        ),
                         threshold=self._threshold_text(rule),
                         mode_key=mode_key,
                         current_ts=current_ts,
-                        metadata={"feature": rule["feature"]},
+                        metadata={
+                            "feature": rule["feature"],
+                            "feature_value": float(feature_value),
+                            "signal_value": (
+                                None if pd.isna(raw_signal_value) else self._normalize_value(raw_signal_value)
+                            ),
+                        },
                     )
                 )
         return alerts
