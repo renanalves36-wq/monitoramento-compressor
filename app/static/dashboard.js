@@ -51,6 +51,7 @@ const state = {
   rangeValue: 24,
   rangeUnit: "hours",
   bucket: "hours",
+  chartMode: "real",
   search: "",
   trendRequestId: 0,
   expandedDiagnoses: {},
@@ -352,6 +353,7 @@ function syncFilterInputs() {
   document.getElementById("range-value").value = String(state.rangeValue);
   document.getElementById("range-unit").value = state.rangeUnit;
   document.getElementById("bucket-select").value = state.bucket;
+  document.getElementById("chart-mode-select").value = state.chartMode;
   Array.from(document.getElementById("signal-multiselect").options).forEach((option) => {
     option.selected = state.selectedSignals.includes(option.value);
   });
@@ -934,6 +936,136 @@ function normalizeSeries(series) {
   });
 }
 
+function renderRealMultiChart() {
+  const svg = document.getElementById("trend-chart");
+  const tooltip = document.getElementById("chart-tooltip");
+  const series = state.selectedSignals
+    .map((signal) => getTrendSeries(signal))
+    .filter((item) => item && safeArray(item.points).length);
+
+  if (!series.length) {
+    document.getElementById("trend-title").textContent = "Sem dados suficientes para a selecao atual";
+    document.getElementById("trend-subtitle").textContent = "Nenhuma serie temporal foi retornada para os indicadores selecionados.";
+    svg.innerHTML = "";
+    tooltip.classList.remove("visible");
+    return;
+  }
+
+  document.getElementById("trend-title").textContent = `Modo real com ${series.length} indicadores`;
+  document.getElementById("trend-subtitle").textContent =
+    "Curvas nas unidades originais. Use esse modo para leitura fisica e o modo normalizado para comparar comportamento relativo.";
+  renderTrendLegend(series, "correlation");
+
+  const width = 1040;
+  const height = 380;
+  const margin = { top: 22, right: 24, bottom: 46, left: 72 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+
+  const timestamps = series
+    .flatMap((item) => safeArray(item.points).map((point) => new Date(point.timestamp).getTime()))
+    .filter(Number.isFinite);
+  if (!timestamps.length) {
+    svg.innerHTML = "";
+    return;
+  }
+
+  const numericValues = series
+    .flatMap((item) => safeArray(item.points).map((point) => Number(point.value)))
+    .filter(Number.isFinite);
+  if (!numericValues.length) {
+    svg.innerHTML = "";
+    return;
+  }
+
+  const minTs = Math.min(...timestamps);
+  const maxTs = Math.max(...timestamps);
+  const xScale = (value) => {
+    if (maxTs === minTs) return margin.left + plotWidth / 2;
+    return margin.left + ((value - minTs) / (maxTs - minTs)) * plotWidth;
+  };
+
+  const rawMin = Math.min(...numericValues);
+  const rawMax = Math.max(...numericValues);
+  const padding = rawMin === rawMax ? Math.max(Math.abs(rawMax), 1) * 0.15 : (rawMax - rawMin) * 0.15;
+  const minValue = rawMin - padding;
+  const maxValue = rawMax + padding;
+  const yScale = (value) => {
+    if (maxValue === minValue) return margin.top + plotHeight / 2;
+    return margin.top + plotHeight - ((value - minValue) / (maxValue - minValue)) * plotHeight;
+  };
+
+  const projectedSeries = series.map((item) => ({
+    ...item,
+    color: colorForSignal(item.signal),
+    chartPoints: safeArray(item.points).map((point) => {
+      const rawTs = new Date(point.timestamp).getTime();
+      const value = Number(point.value);
+      return {
+        ...point,
+        rawTs,
+        x: xScale(rawTs),
+        y: Number.isFinite(value) ? yScale(value) : null,
+      };
+    }),
+  }));
+
+  const primary = getPrimaryTrend();
+  const markerAlerts = primary
+    ? getSignalAlertEvents(primary.signal).filter((alert) => {
+        const ts = new Date(alert.last_seen_at).getTime();
+        return Number.isFinite(ts) && ts >= minTs && ts <= maxTs;
+      }).slice(0, 80)
+    : [];
+
+  const markerMarkup = markerAlerts.map((alert) => {
+    const ts = new Date(alert.last_seen_at).getTime();
+    const x = xScale(ts);
+    return `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${getMarkerColor(alert.severity)}" stroke-opacity="0.12" stroke-dasharray="4 8" />`;
+  }).join("");
+
+  svg.innerHTML = `
+    <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
+    ${buildGridLines(width, height, margin, minValue, maxValue)}
+    <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${width - margin.right}" y2="${height - margin.bottom}" stroke="rgba(255,255,255,0.12)" />
+    ${markerMarkup}
+    ${projectedSeries.map((item) => `
+      <path d="${buildPath(item.chartPoints, "x", "y")}" fill="none" stroke="${item.color}" stroke-width="${item.signal === state.signal ? 3.3 : 2.2}" stroke-linecap="round" stroke-linejoin="round" />
+    `).join("")}
+    ${buildXTicks(minTs, maxTs, width, height, margin, state.rangeUnit, state.bucket)}
+  `;
+
+  svg.onmouseleave = () => tooltip.classList.remove("visible");
+  svg.onmousemove = (event) => {
+    const bounds = svg.getBoundingClientRect();
+    const relativeX = ((event.clientX - bounds.left) / bounds.width) * width;
+    const summaries = projectedSeries.map((item) => {
+      const nearest = item.chartPoints.reduce((best, point) => {
+        if (!best) return point;
+        return Math.abs(point.x - relativeX) < Math.abs(best.x - relativeX) ? point : best;
+      }, null);
+      return nearest ? {
+        label: item.label,
+        unit: item.unit,
+        color: item.color,
+        value: nearest.value,
+        timestamp: nearest.timestamp,
+      } : null;
+    }).filter(Boolean);
+
+    if (!summaries.length) return;
+    tooltip.innerHTML = `
+      <div><strong>${formatDateTime(summaries[0].timestamp)}</strong></div>
+      ${summaries.map((item) => `
+        <div style="color:${item.color}">${item.label}: ${formatMaybe(item.value, item.unit || "")}</div>
+      `).join("")}
+    `;
+    tooltip.style.left = `${event.clientX - bounds.left}px`;
+    tooltip.style.top = `${event.clientY - bounds.top}px`;
+    tooltip.classList.add("visible");
+  };
+}
+
 function renderCorrelationChart() {
   const svg = document.getElementById("trend-chart");
   const tooltip = document.getElementById("chart-tooltip");
@@ -1045,7 +1177,11 @@ function renderCorrelationChart() {
 function renderCharts() {
   renderTrendSummary();
   if (state.selectedSignals.length > 1) {
-    renderCorrelationChart();
+    if (state.chartMode === "normalized") {
+      renderCorrelationChart();
+      return;
+    }
+    renderRealMultiChart();
     return;
   }
   renderPrimaryChart();
@@ -1295,6 +1431,24 @@ function attachEvents() {
     bindDynamicEvents();
     setTrendLoading();
     await loadTrends();
+  });
+
+  document.getElementById("chart-mode-select").addEventListener("change", () => {
+    state.chartMode = document.getElementById("chart-mode-select").value;
+    renderCharts();
+  });
+
+  document.getElementById("chart-info-button").addEventListener("click", () => {
+    const panel = document.getElementById("chart-info-panel");
+    const button = document.getElementById("chart-info-button");
+    const isHidden = panel.hasAttribute("hidden");
+    if (isHidden) {
+      panel.removeAttribute("hidden");
+      button.setAttribute("aria-expanded", "true");
+      return;
+    }
+    panel.setAttribute("hidden", "");
+    button.setAttribute("aria-expanded", "false");
   });
 
   document.getElementById("refresh-button").addEventListener("click", async () => {

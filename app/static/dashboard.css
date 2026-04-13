@@ -619,6 +619,54 @@ select option {
   background: rgba(10, 15, 20, 0.94);
 }
 
+.chart-top-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+}
+
+.chart-info-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: rgba(18, 24, 31, 0.95);
+  color: var(--yellow);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.chart-info-panel {
+  position: absolute;
+  top: 46px;
+  right: 12px;
+  z-index: 3;
+  width: min(340px, calc(100% - 24px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: rgba(8, 11, 15, 0.98);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
+}
+
+.chart-info-panel strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--heading);
+}
+
+.chart-info-panel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.88rem;
+}
+
+.chart-info-panel p + p {
+  margin-top: 8px;
+}
+
 #trend-chart {
   width: 100%;
   height: 380px;

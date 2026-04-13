@@ -10,7 +10,7 @@ DASHBOARD_HTML = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel TA6000</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260412-compact-2" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260413-chart-mode-1" />
 </head>
 <body>
   <main class="shell">
@@ -80,6 +80,13 @@ DASHBOARD_HTML = """
             <option value="days">por dia</option>
           </select>
         </div>
+        <div class="field">
+          <label for="chart-mode-select">Visual do grafico</label>
+          <select id="chart-mode-select">
+            <option value="real" selected>modo real</option>
+            <option value="normalized">correlacao normalizada</option>
+          </select>
+        </div>
       </div>
 
       <div class="selection-bar">
@@ -121,6 +128,14 @@ DASHBOARD_HTML = """
           <div class="panel-note" id="trend-subtitle">Aguardando o carregamento das curvas.</div>
         </div>
         <div class="chart-card" id="chart-card">
+          <div class="chart-top-actions">
+            <button class="chart-info-button" id="chart-info-button" type="button" aria-expanded="false" aria-controls="chart-info-panel">!</button>
+          </div>
+          <div class="chart-info-panel" id="chart-info-panel" hidden>
+            <strong>Como ler o grafico</strong>
+            <p><b>Modo real</b>: mostra os valores nas unidades originais de cada indicador. E bom para enxergar o comportamento fisico, mas pode dificultar comparacoes quando as grandezas usam unidades muito diferentes.</p>
+            <p><b>Correlacao normalizada</b>: transforma cada serie para uma escala relativa de 0% a 100% dentro da janela atual. Isso ajuda a comparar a forma da curva, sem indicar percentual fisico real do processo.</p>
+          </div>
           <svg id="trend-chart" viewBox="0 0 1040 380" preserveAspectRatio="none"></svg>
           <div class="chart-tooltip" id="chart-tooltip"></div>
         </div>
@@ -182,7 +197,7 @@ DASHBOARD_HTML = """
     </section>
   </main>
 
-  <script src="/static/dashboard.js?v=20260412-compact-2" defer></script>
+  <script src="/static/dashboard.js?v=20260413-chart-mode-1" defer></script>
 </body>
 </html>
 """
