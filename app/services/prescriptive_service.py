@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.config import Settings, get_settings
 from app.domain.mappings import CALIBRATION_HINTS, TARGET_SIGNAL_BY_SIGNAL
 from app.domain.prescriptive_matrix import PRESCRIPTIVE_MATRIX
 from app.domain.schemas import PrescriptiveDiagnosis, PrescriptiveHypothesis
@@ -34,7 +35,8 @@ CRITICAL_ANALOG_SIGNALS = {
 class PrescriptiveService:
     """Ranqueia hipoteses e prescreve acoes a partir de flags simples."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
         self.matrix = PRESCRIPTIVE_MATRIX
         self.signal_matrix = dict(self.matrix.get("signals", {}))
         self.global_rules = list(self.matrix.get("global_rules", []))
@@ -510,10 +512,13 @@ class PrescriptiveService:
         min_1h = self._get_numeric(snapshot_map, feature_map, f"{signal}__min_1h")
         max_1h = self._get_numeric(snapshot_map, feature_map, f"{signal}__max_1h")
         dynamic_range = self._safe_diff(max_1h, min_1h)
-        range_threshold = max(abs(current) * 0.005, 0.01)
-        if std_1h is not None and std_1h <= range_threshold:
-            return True
-        return dynamic_range is not None and dynamic_range <= range_threshold
+        range_threshold = max(
+            abs(current) * self.settings.sensor_stuck_relative_range_tolerance,
+            self.settings.sensor_stuck_absolute_range_tolerance,
+        )
+        if std_1h is None or dynamic_range is None:
+            return False
+        return std_1h <= (range_threshold / 2.0) and dynamic_range <= range_threshold
 
     def _is_vacuum_inconsistent(
         self,

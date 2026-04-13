@@ -50,6 +50,18 @@ class Settings(BaseModel):
     demo_csv_full_bootstrap: bool = Field(
         default=os.getenv("DEMO_CSV_FULL_BOOTSTRAP", "true").lower() == "true"
     )
+    sensor_stuck_min_points: int = Field(
+        default=int(os.getenv("SENSOR_STUCK_MIN_POINTS", "45"))
+    )
+    sensor_stuck_min_duration_minutes: int = Field(
+        default=int(os.getenv("SENSOR_STUCK_MIN_DURATION_MINUTES", "45"))
+    )
+    sensor_stuck_relative_range_tolerance: float = Field(
+        default=float(os.getenv("SENSOR_STUCK_RELATIVE_RANGE_TOLERANCE", "0.001"))
+    )
+    sensor_stuck_absolute_range_tolerance: float = Field(
+        default=float(os.getenv("SENSOR_STUCK_ABSOLUTE_RANGE_TOLERANCE", "0.01"))
+    )
     alert_rules_path: Path = Field(
         default=BASE_DIR / os.getenv("ALERT_RULES_PATH", "config/alert_rules.json")
     )

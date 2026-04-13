@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.config import Settings, get_settings
 from app.domain.mappings import (
     CALIBRATION_HINTS,
     STUCK_SENSOR_SIGNALS,
@@ -30,10 +31,11 @@ class AlertService:
         "critical": 95.0,
     }
 
-    def __init__(self, rules_path: Path) -> None:
+    def __init__(self, rules_path: Path, settings: Settings | None = None) -> None:
         self.rules_path = rules_path
+        self.settings = settings or get_settings()
         self.rules = self._load_rules()
-        self.prescriptive_service = PrescriptiveService()
+        self.prescriptive_service = PrescriptiveService(settings=self.settings)
 
     def _load_rules(self) -> dict[str, Any]:
         with self.rules_path.open("r", encoding="utf-8") as file_obj:
@@ -251,7 +253,7 @@ class AlertService:
                     layer="operational_anomaly",
                     subsystem=self._infer_subsystem(signal),
                     signal=signal,
-                    severity="medium",
+                    severity="low",
                     title=f"Possivel sensor travado: {signal}",
                     message="Possivel sensor travado por repeticao persistente do mesmo valor.",
                     current_value=details.get("repeated_value"),
@@ -270,7 +272,7 @@ class AlertService:
                         layer="operational_anomaly",
                         subsystem=self._infer_subsystem(issue.signal),
                         signal=issue.signal,
-                        severity="medium",
+                        severity="low",
                         title=f"Possivel sensor travado: {issue.signal}",
                         message=issue.message,
                         current_value=issue.details.get("repeated_value"),
@@ -327,20 +329,54 @@ class AlertService:
 
         return alerts
 
-    @staticmethod
     def _detect_sensor_stuck(
+        self,
         history_window: pd.DataFrame,
         signal: str,
     ) -> dict[str, Any] | None:
-        if signal not in history_window.columns:
+        if signal not in history_window.columns or "timestamp" not in history_window.columns:
             return None
-        tail = history_window[signal].dropna().tail(10)
-        if len(tail) < 5 or tail.nunique(dropna=True) != 1:
+        candidate = (
+            history_window.loc[:, ["timestamp", signal]]
+            .dropna(subset=[signal])
+            .sort_values("timestamp")
+            .tail(self.settings.sensor_stuck_min_points)
+        )
+        if len(candidate) < self.settings.sensor_stuck_min_points:
+            return None
+        duration_minutes = self._estimate_observed_window_minutes(candidate["timestamp"])
+        if duration_minutes < float(self.settings.sensor_stuck_min_duration_minutes):
+            return None
+        values = pd.to_numeric(candidate[signal], errors="coerce").dropna()
+        if len(values) < self.settings.sensor_stuck_min_points:
+            return None
+        repeated_value = float(values.iloc[-1])
+        range_value = float(values.max() - values.min())
+        std_value = float(values.std(ddof=0))
+        range_threshold = max(
+            abs(repeated_value) * self.settings.sensor_stuck_relative_range_tolerance,
+            self.settings.sensor_stuck_absolute_range_tolerance,
+        )
+        if range_value > range_threshold or std_value > (range_threshold / 2.0):
             return None
         return {
-            "repeated_value": float(tail.iloc[-1]),
-            "window_points": int(len(tail)),
+            "repeated_value": repeated_value,
+            "window_points": int(len(values)),
+            "window_minutes": round(duration_minutes, 1),
+            "observed_range": round(range_value, 6),
+            "observed_std": round(std_value, 6),
         }
+
+    @staticmethod
+    def _estimate_observed_window_minutes(timestamps: pd.Series) -> float:
+        if len(timestamps) <= 1:
+            return 0.0
+        ordered = pd.to_datetime(timestamps, errors="coerce").dropna().sort_values().reset_index(drop=True)
+        if len(ordered) <= 1:
+            return 0.0
+        duration_minutes = (ordered.iloc[-1] - ordered.iloc[0]).total_seconds() / 60.0
+        step_minutes = ordered.diff().dropna().dt.total_seconds().median() / 60.0
+        return duration_minutes + (0.0 if pd.isna(step_minutes) else float(step_minutes))
 
     @staticmethod
     def _detect_zero_abnormal(

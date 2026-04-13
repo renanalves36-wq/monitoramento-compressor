@@ -48,7 +48,7 @@ class HealthService:
         self.repository = repository
         self.ingestion_service = IngestionService(settings)
         self.feature_service = FeatureService()
-        self.alert_service = AlertService(settings.alert_rules_path)
+        self.alert_service = AlertService(settings.alert_rules_path, settings=settings)
         self.logger = get_logger(__name__)
 
         self._history_frame = pd.DataFrame()

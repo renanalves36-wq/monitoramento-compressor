@@ -464,20 +464,73 @@ class IngestionService:
         issues: list[DataQualityIssue] = []
         latest_ts = frame["timestamp"].max()
         for signal in STUCK_SENSOR_SIGNALS:
-            if signal not in frame.columns:
+            details = self._detect_stuck_sensor(frame=frame, signal=signal)
+            if details is None:
                 continue
-            tail = frame[signal].dropna().tail(10)
-            if len(tail) >= 5 and tail.nunique(dropna=True) == 1:
-                issues.append(
-                    DataQualityIssue(
-                        issue_type="sensor_stuck",
-                        signal=signal,
-                        timestamp=latest_ts,
-                        message="Possivel sensor travado por repeticao persistente do mesmo valor.",
-                        details={"repeated_value": float(tail.iloc[-1]), "window_points": int(len(tail))},
-                    )
+            issues.append(
+                DataQualityIssue(
+                    issue_type="sensor_stuck",
+                    signal=signal,
+                    timestamp=latest_ts,
+                    message="Possivel sensor travado por repeticao persistente do mesmo valor.",
+                    details=details,
                 )
+            )
         return issues
+
+    def _detect_stuck_sensor(
+        self,
+        frame: pd.DataFrame,
+        signal: str,
+    ) -> dict[str, Any] | None:
+        if signal not in frame.columns or "timestamp" not in frame.columns:
+            return None
+
+        candidate = (
+            frame.loc[:, ["timestamp", signal]]
+            .dropna(subset=[signal])
+            .sort_values("timestamp")
+            .tail(self.settings.sensor_stuck_min_points)
+        )
+        if len(candidate) < self.settings.sensor_stuck_min_points:
+            return None
+
+        duration_minutes = self._estimate_observed_window_minutes(candidate["timestamp"])
+        if duration_minutes < float(self.settings.sensor_stuck_min_duration_minutes):
+            return None
+
+        values = pd.to_numeric(candidate[signal], errors="coerce").dropna()
+        if len(values) < self.settings.sensor_stuck_min_points:
+            return None
+
+        repeated_value = float(values.iloc[-1])
+        range_value = float(values.max() - values.min())
+        std_value = float(values.std(ddof=0))
+        range_threshold = max(
+            abs(repeated_value) * self.settings.sensor_stuck_relative_range_tolerance,
+            self.settings.sensor_stuck_absolute_range_tolerance,
+        )
+        if range_value > range_threshold or std_value > (range_threshold / 2.0):
+            return None
+
+        return {
+            "repeated_value": repeated_value,
+            "window_points": int(len(values)),
+            "window_minutes": round(duration_minutes, 1),
+            "observed_range": round(range_value, 6),
+            "observed_std": round(std_value, 6),
+        }
+
+    @staticmethod
+    def _estimate_observed_window_minutes(timestamps: pd.Series) -> float:
+        if len(timestamps) <= 1:
+            return 0.0
+        ordered = pd.to_datetime(timestamps, errors="coerce").dropna().sort_values().reset_index(drop=True)
+        if len(ordered) <= 1:
+            return 0.0
+        duration_minutes = (ordered.iloc[-1] - ordered.iloc[0]).total_seconds() / 60.0
+        step_minutes = ordered.diff().dropna().dt.total_seconds().median() / 60.0
+        return duration_minutes + (0.0 if pd.isna(step_minutes) else float(step_minutes))
 
     def _collect_plausibility_issues(self, frame: pd.DataFrame) -> list[DataQualityIssue]:
         issues: list[DataQualityIssue] = []

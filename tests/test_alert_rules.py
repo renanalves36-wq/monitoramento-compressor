@@ -68,6 +68,42 @@ class AlertServiceTests(unittest.TestCase):
         )
         self.assertTrue(any(score.subsystem == "ar_processo" and score.score > 0 for score in scores))
 
+    def test_sensor_stuck_requires_longer_window_and_lower_severity(self) -> None:
+        rows = []
+        for minute in range(20):
+            rows.append(
+                {
+                    "timestamp": datetime(2026, 4, 9, 8, minute, 0),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "st_oper": "EM FUNCIONAMENTO",
+                    "st_carga_oper": "CARREGADO",
+                    "pv_corr_motor_a": 181.0,
+                }
+            )
+
+        short_frame = pd.DataFrame(rows)
+        short_alerts, _ = self.service.evaluate(short_frame, [])
+        self.assertFalse(any(alert.rule_id == "sensor_stuck::pv_corr_motor_a" for alert in short_alerts))
+
+        for minute in range(20, 50):
+            rows.append(
+                {
+                    "timestamp": datetime(2026, 4, 9, 8, minute, 0),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "st_oper": "EM FUNCIONAMENTO",
+                    "st_carga_oper": "CARREGADO",
+                    "pv_corr_motor_a": 181.0,
+                }
+            )
+
+        long_frame = pd.DataFrame(rows)
+        long_alerts, _ = self.service.evaluate(long_frame, [])
+        stuck_alert = next(
+            alert for alert in long_alerts if alert.rule_id == "sensor_stuck::pv_corr_motor_a"
+        )
+        self.assertEqual(stuck_alert.severity, "low")
+        self.assertGreaterEqual(float(stuck_alert.metadata["window_minutes"]), 45.0)
+
 
 if __name__ == "__main__":
     unittest.main()
