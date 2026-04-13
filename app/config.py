@@ -62,6 +62,35 @@ class Settings(BaseModel):
     sensor_stuck_absolute_range_tolerance: float = Field(
         default=float(os.getenv("SENSOR_STUCK_ABSOLUTE_RANGE_TOLERANCE", "0.01"))
     )
+    predictive_alerts_enabled: bool = Field(
+        default=os.getenv("PREDICTIVE_ALERTS_ENABLED", "true").lower() == "true"
+    )
+    predictive_min_confidence: float = Field(
+        default=float(os.getenv("PREDICTIVE_MIN_CONFIDENCE", "0.68"))
+    )
+    predictive_forecast_horizon_minutes: int = Field(
+        default=int(os.getenv("PREDICTIVE_FORECAST_HORIZON_MINUTES", "180"))
+    )
+    predictive_trip_horizon_minutes: int = Field(
+        default=int(os.getenv("PREDICTIVE_TRIP_HORIZON_MINUTES", "45"))
+    )
+    predictive_min_points: int = Field(
+        default=int(os.getenv("PREDICTIVE_MIN_POINTS", "18"))
+    )
+    predictive_min_regression_r2: float = Field(
+        default=float(os.getenv("PREDICTIVE_MIN_REGRESSION_R2", "0.55"))
+    )
+    gemini_enabled: bool = Field(
+        default=os.getenv("GEMINI_ENABLED", "false").lower() == "true"
+    )
+    gemini_api_key: str | None = Field(default=os.getenv("GEMINI_API_KEY"))
+    gemini_model: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    gemini_temperature: float = Field(
+        default=float(os.getenv("GEMINI_TEMPERATURE", "0.1"))
+    )
+    gemini_max_output_tokens: int = Field(
+        default=int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "1200"))
+    )
     alert_rules_path: Path = Field(
         default=BASE_DIR / os.getenv("ALERT_RULES_PATH", "config/alert_rules.json")
     )

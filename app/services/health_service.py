@@ -35,6 +35,7 @@ from app.domain.schemas import (
 from app.services.alert_service import AlertService
 from app.services.feature_service import FeatureService
 from app.services.ingestion_service import IngestionBatch, IngestionService
+from app.services.predictive_service import PredictiveService
 from app.storage.alert_repository import AlertRepository
 from app.utils.datetime_utils import lookback_datetime, utc_now
 from app.utils.logger import get_logger
@@ -49,6 +50,7 @@ class HealthService:
         self.ingestion_service = IngestionService(settings)
         self.feature_service = FeatureService()
         self.alert_service = AlertService(settings.alert_rules_path, settings=settings)
+        self.predictive_service = PredictiveService(settings)
         self.logger = get_logger(__name__)
 
         self._history_frame = pd.DataFrame()
@@ -100,6 +102,18 @@ class HealthService:
             feature_frame=self._feature_frame,
             quality_issues=self._quality_issues,
         )
+        predictive_alerts = self.predictive_service.evaluate_current(
+            feature_frame=self._feature_frame,
+            active_alerts=active_alerts,
+        )
+        if predictive_alerts:
+            active_alerts = [*active_alerts, *predictive_alerts]
+            event_history = sorted(
+                [*event_history, *predictive_alerts],
+                key=lambda alert: alert.last_seen_at,
+                reverse=True,
+            )
+            risk_scores = self.alert_service._compute_scores(active_alerts)
         self.repository.replace_active_alerts(active_alerts)
         self._active_alerts = active_alerts
         self._alert_events = event_history

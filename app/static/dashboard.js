@@ -495,11 +495,14 @@ function renderScorePanel() {
 
 function buildDiagnosisInline(alert) {
   const diagnosis = alert.prescriptive_diagnosis;
-  if (!diagnosis) return "";
+  const predictive = alert.predictive_diagnosis;
+  const llmInsight = alert.llm_insight;
+  if (!diagnosis && !predictive && !llmInsight) return "";
 
   const isOpen = Boolean(state.expandedDiagnoses[alert.alert_id]);
   const buildList = (items, formatter) => {
-    const rows = safeArray(items).slice(0, 6);
+    const allRows = safeArray(items);
+    const rows = isOpen ? allRows : allRows.slice(0, 4);
     if (!rows.length) {
       return '<div class="stack-meta">Sem itens adicionais.</div>';
     }
@@ -510,27 +513,61 @@ function buildDiagnosisInline(alert) {
     <div class="alert-diagnosis">
       <div class="diagnosis-head">
         <div class="diagnosis-scores">
-          <span class="diagnosis-score-tag">criticidade: ${diagnosis.criticidade_base || "--"}</span>
-          <span class="diagnosis-score-tag">interno ${formatNumber(diagnosis.score_interno, 0)}</span>
-          <span class="diagnosis-score-tag">periferico ${formatNumber(diagnosis.score_periferico, 0)}</span>
+          ${predictive ? `<span class="diagnosis-score-tag">degradacao ${formatNumber(predictive.degradation_score, 0)}</span>` : ""}
+          ${predictive ? `<span class="diagnosis-score-tag">confianca ${formatNumber((predictive.confidence || 0) * 100, 0)}%</span>` : ""}
+          ${diagnosis ? `<span class="diagnosis-score-tag">criticidade: ${diagnosis.criticidade_base || "--"}</span>` : ""}
+          ${diagnosis ? `<span class="diagnosis-score-tag">interno ${formatNumber(diagnosis.score_interno, 0)}</span>` : ""}
+          ${diagnosis ? `<span class="diagnosis-score-tag">periferico ${formatNumber(diagnosis.score_periferico, 0)}</span>` : ""}
         </div>
         <button class="diagnosis-toggle" data-toggle-diagnosis="${alert.alert_id}" type="button">
           ${isOpen ? "Retrair" : "Expandir"}
         </button>
       </div>
       <div class="diagnosis-panel ${isOpen ? "open" : ""}">
-        <div class="diagnosis-section">
-          <strong>Hipoteses</strong>
-          ${buildList(diagnosis.hipoteses, (item) => `${item.causa} (${item.tipo} | score ${formatNumber(item.score, 0)})`)}
-        </div>
-        <div class="diagnosis-section">
-          <strong>Acoes</strong>
-          ${buildList(diagnosis.acoes_recomendadas, (item) => item)}
-        </div>
-        <div class="diagnosis-section">
-          <strong>Observacoes</strong>
-          ${buildList(diagnosis.observacoes, (item) => item)}
-        </div>
+        ${predictive ? `
+          <div class="diagnosis-section">
+            <strong>Predicao estatistica</strong>
+            ${buildList([
+              `${predictive.predicted_event === "possible_trip" ? "possivel trip" : "alarme critico"} em ~${formatNumber(predictive.forecast_minutes, 0)} min`,
+              `slope ${formatMaybe(predictive.slope_per_hour, "/h")}`,
+              `R2 ${formatNumber(predictive.regression_r2)}`,
+              `consistencia ${formatNumber((predictive.directional_consistency || 0) * 100, 0)}%`,
+            ], (item) => item)}
+          </div>
+        ` : ""}
+        ${diagnosis ? `
+          <div class="diagnosis-section">
+            <strong>Hipoteses</strong>
+            ${buildList(diagnosis.hipoteses, (item) => `${item.causa} (${item.tipo} | score ${formatNumber(item.score, 0)})`)}
+          </div>
+          <div class="diagnosis-section">
+            <strong>Acoes</strong>
+            ${buildList(diagnosis.acoes_recomendadas, (item) => item)}
+          </div>
+          <div class="diagnosis-section">
+            <strong>Observacoes</strong>
+            ${buildList(diagnosis.observacoes, (item) => item)}
+          </div>
+        ` : ""}
+        ${llmInsight ? `
+          <div class="diagnosis-section">
+            <strong>Leitura de IA</strong>
+            <div class="stack-meta">${llmInsight.summary || "Sem resumo adicional."}</div>
+            ${buildList(llmInsight.insights, (item) => item)}
+          </div>
+          <div class="diagnosis-section">
+            <strong>Hipoteses da IA</strong>
+            ${buildList(llmInsight.hipoteses, (item) => `${item.causa} (${formatNumber((item.confianca || 0) * 100, 0)}%${item.racional ? ` | ${item.racional}` : ""})`)}
+          </div>
+          <div class="diagnosis-section">
+            <strong>Acoes sugeridas pela IA</strong>
+            ${buildList(llmInsight.acoes_recomendadas, (item) => item)}
+          </div>
+          <div class="diagnosis-section">
+            <strong>Cautelas e observacoes</strong>
+            ${buildList(llmInsight.observacoes, (item) => item)}
+          </div>
+        ` : ""}
       </div>
     </div>
   `;

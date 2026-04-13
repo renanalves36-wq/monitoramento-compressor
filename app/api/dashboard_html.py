@@ -10,7 +10,7 @@ DASHBOARD_HTML = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel TA6000</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260413-chart-mode-1" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260413-ai-predictive-1" />
 </head>
 <body>
   <main class="shell">
@@ -197,7 +197,7 @@ DASHBOARD_HTML = """
     </section>
   </main>
 
-  <script src="/static/dashboard.js?v=20260413-chart-mode-1" defer></script>
+  <script src="/static/dashboard.js?v=20260413-ai-predictive-1" defer></script>
 </body>
 </html>
 """

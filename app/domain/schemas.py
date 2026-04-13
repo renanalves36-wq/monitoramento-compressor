@@ -34,6 +34,43 @@ class PrescriptiveDiagnosis(BaseModel):
     observacoes: list[str] = Field(default_factory=list)
 
 
+class LlmInsightHypothesis(BaseModel):
+    causa: str
+    confianca: float = 0.0
+    racional: str | None = None
+
+
+class LlmInsight(BaseModel):
+    provider: str
+    model: str
+    confidence: float = 0.0
+    summary: str
+    insights: list[str] = Field(default_factory=list)
+    observacoes: list[str] = Field(default_factory=list)
+    false_positive_risk: str = "medium"
+    hipoteses: list[LlmInsightHypothesis] = Field(default_factory=list)
+    acoes_recomendadas: list[str] = Field(default_factory=list)
+
+
+class PredictiveDiagnosis(BaseModel):
+    signal: str
+    method: str = "trend_regression"
+    trend_direction: str
+    degradation_score: float
+    confidence: float
+    threshold: float
+    threshold_label: str
+    current_value: float | None = None
+    slope_per_hour: float | None = None
+    zscore_1h: float | None = None
+    ewma_gap_abs: float | None = None
+    regression_r2: float | None = None
+    directional_consistency: float | None = None
+    forecast_minutes: float | None = None
+    predicted_event: str
+    observations: list[str] = Field(default_factory=list)
+
+
 class AlertRecord(BaseModel):
     alert_id: str
     rule_id: str
@@ -51,6 +88,8 @@ class AlertRecord(BaseModel):
     is_active: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
     prescriptive_diagnosis: PrescriptiveDiagnosis | None = None
+    predictive_diagnosis: PredictiveDiagnosis | None = None
+    llm_insight: LlmInsight | None = None
 
 
 class SubsystemRiskScore(BaseModel):

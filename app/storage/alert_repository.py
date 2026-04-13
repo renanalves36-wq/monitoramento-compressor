@@ -6,7 +6,12 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.domain.schemas import AlertRecord, PrescriptiveDiagnosis
+from app.domain.schemas import (
+    AlertRecord,
+    LlmInsight,
+    PredictiveDiagnosis,
+    PrescriptiveDiagnosis,
+)
 
 
 class AlertRepository:
@@ -51,6 +56,12 @@ class AlertRepository:
                     metadata_payload["prescriptive_diagnosis"] = (
                         alert.prescriptive_diagnosis.model_dump()
                     )
+                if alert.predictive_diagnosis is not None:
+                    metadata_payload["predictive_diagnosis"] = (
+                        alert.predictive_diagnosis.model_dump()
+                    )
+                if alert.llm_insight is not None:
+                    metadata_payload["llm_insight"] = alert.llm_insight.model_dump()
                 connection.execute(
                     """
                     INSERT INTO alerts (
@@ -134,6 +145,8 @@ class AlertRepository:
         for row in rows:
             metadata_payload = json.loads(row["metadata_json"] or "{}")
             diagnosis_payload = metadata_payload.pop("prescriptive_diagnosis", None)
+            predictive_payload = metadata_payload.pop("predictive_diagnosis", None)
+            llm_payload = metadata_payload.pop("llm_insight", None)
             alerts.append(
                 AlertRecord(
                     alert_id=row["alert_id"],
@@ -155,6 +168,16 @@ class AlertRepository:
                         None
                         if diagnosis_payload is None
                         else PrescriptiveDiagnosis.model_validate(diagnosis_payload)
+                    ),
+                    predictive_diagnosis=(
+                        None
+                        if predictive_payload is None
+                        else PredictiveDiagnosis.model_validate(predictive_payload)
+                    ),
+                    llm_insight=(
+                        None
+                        if llm_payload is None
+                        else LlmInsight.model_validate(llm_payload)
                     ),
                 )
             )
