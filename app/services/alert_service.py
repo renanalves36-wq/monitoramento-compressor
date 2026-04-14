@@ -18,6 +18,7 @@ from app.domain.mappings import (
     ZERO_ABNORMAL_SIGNALS,
 )
 from app.domain.schemas import AlertRecord, DataQualityIssue, SubsystemRiskScore
+from app.services.gemini_insight_service import GeminiInsightService
 from app.services.prescriptive_service import PrescriptiveService
 
 
@@ -36,6 +37,7 @@ class AlertService:
         self.settings = settings or get_settings()
         self.rules = self._load_rules()
         self.prescriptive_service = PrescriptiveService(settings=self.settings)
+        self.gemini_service = GeminiInsightService(settings=self.settings)
 
     def _load_rules(self) -> dict[str, Any]:
         with self.rules_path.open("r", encoding="utf-8") as file_obj:
@@ -209,7 +211,12 @@ class AlertService:
             if feature_value is None or pd.isna(feature_value):
                 continue
 
-            if self._condition_triggered(rule=rule, value=float(feature_value)):
+            passes_guardrails, guardrail_metadata = self._passes_trend_guardrails(
+                latest=latest,
+                rule=rule,
+                feature_value=float(feature_value),
+            )
+            if self._condition_triggered(rule=rule, value=float(feature_value)) and passes_guardrails:
                 raw_signal_value = latest.get(rule["signal"])
                 alerts.append(
                     self._build_alert(
@@ -232,10 +239,100 @@ class AlertService:
                             "signal_value": (
                                 None if pd.isna(raw_signal_value) else self._normalize_value(raw_signal_value)
                             ),
+                            **guardrail_metadata,
                         },
                     )
                 )
         return alerts
+
+    def _passes_trend_guardrails(
+        self,
+        *,
+        latest: pd.Series,
+        rule: dict[str, Any],
+        feature_value: float,
+    ) -> tuple[bool, dict[str, Any]]:
+        signal = str(rule["signal"])
+        feature = str(rule["feature"])
+        raw_value = self._safe_float(latest.get(signal))
+        ma_15m = self._safe_float(latest.get(f"{signal}__ma_15m"))
+        ma_1h = self._safe_float(latest.get(f"{signal}__ma_1h"))
+        std_1h = self._safe_float(latest.get(f"{signal}__std_1h"))
+        ewma = self._safe_float(latest.get(f"{signal}__ewma"))
+
+        metadata = {
+            "feature_label": self._trend_feature_label(feature),
+            "analysis_label": (
+                "tendencia anormal" if feature.startswith("slope") else "comportamento anormal"
+            ),
+            "reference_value": ma_1h,
+        }
+        if raw_value is None:
+            return False, metadata
+
+        if feature in {"slope_15m", "slope_1h"}:
+            baseline = ma_1h if ma_1h is not None else ma_15m
+            if baseline is None:
+                return False, metadata
+
+            is_upward = feature_value > 0
+            aligned = self._is_trend_alignment_consistent(
+                raw_value=raw_value,
+                ma_15m=ma_15m,
+                ma_1h=ma_1h,
+                is_upward=is_upward,
+            )
+            gap_threshold = max(
+                self._noise_floor(baseline),
+                0.0 if std_1h is None else std_1h,
+            )
+            raw_gap = abs(raw_value - baseline)
+            if not aligned or raw_gap < gap_threshold:
+                return False, metadata
+
+            metadata["analysis_reason"] = (
+                "subida sustentada acima do comportamento recente"
+                if is_upward
+                else "queda sustentada abaixo do comportamento recente"
+            )
+            metadata["reference_value"] = baseline
+            metadata["reference_label"] = "media da ultima hora"
+            return True, metadata
+
+        if feature == "zscore_1h":
+            if ma_1h is None or std_1h is None:
+                return False, metadata
+            if std_1h < self._noise_floor(ma_1h, minimum=0.01, ratio=0.005):
+                return False, metadata
+
+            raw_gap = abs(raw_value - ma_1h)
+            abnormal_gap = max(std_1h * 1.2, self._noise_floor(ma_1h))
+            if raw_gap < abnormal_gap:
+                return False, metadata
+
+            metadata["analysis_reason"] = "valor fora do comportamento normal recente"
+            metadata["reference_label"] = "media da ultima hora"
+            return True, metadata
+
+        if feature == "ewma_gap_abs":
+            baseline = ewma if ewma is not None else ma_1h
+            if baseline is None:
+                return False, metadata
+
+            raw_gap = abs(raw_value - baseline)
+            abnormal_gap = max(
+                self._noise_floor(baseline, minimum=0.1, ratio=0.03),
+                0.0 if std_1h is None else std_1h,
+            )
+            if raw_gap < abnormal_gap:
+                return False, metadata
+
+            metadata["analysis_reason"] = "desvio relevante em relacao ao comportamento recente"
+            metadata["reference_value"] = baseline
+            metadata["reference_label"] = "referencia recente"
+            return True, metadata
+
+        return True, metadata
 
     def _evaluate_anomaly_rules(
         self,
@@ -448,6 +545,62 @@ class AlertService:
             metadata=metadata,
         )
 
+    def enrich_alerts_with_llm(
+        self,
+        alerts: list[AlertRecord],
+        feature_frame: pd.DataFrame,
+        *,
+        max_count: int = 8,
+    ) -> None:
+        if not alerts or feature_frame.empty or not self.gemini_service.enabled():
+            return
+
+        ordered_candidates: list[AlertRecord] = []
+        seen_ids: set[str] = set()
+        for alert in sorted(
+            alerts,
+            key=lambda item: (
+                item.is_active,
+                self.severity_weights.get(item.severity, 0.0),
+                item.last_seen_at,
+            ),
+            reverse=True,
+        ):
+            if alert.alert_id in seen_ids or not self._supports_llm_enrichment(alert):
+                continue
+            seen_ids.add(alert.alert_id)
+            ordered_candidates.append(alert)
+            if len(ordered_candidates) >= max_count:
+                break
+
+        if not ordered_candidates:
+            return
+
+        ordered_frame = feature_frame.copy()
+        ordered_frame["timestamp"] = pd.to_datetime(ordered_frame["timestamp"], errors="coerce")
+        ordered_frame = ordered_frame.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+
+        for alert in ordered_candidates:
+            if alert.llm_insight is not None:
+                continue
+            snapshot = self._find_snapshot_for_alert(ordered_frame, alert.last_seen_at)
+            if snapshot is None:
+                continue
+            alert.llm_insight = self.gemini_service.generate_alert_insight(
+                layer=alert.layer,
+                signal=alert.signal or alert.rule_id,
+                alert_title=alert.title,
+                alert_message=alert.message,
+                snapshot=self._build_snapshot_context(snapshot),
+                evidence=self._build_alert_evidence(alert),
+                prescriptive_diagnosis=(
+                    None if alert.prescriptive_diagnosis is None else alert.prescriptive_diagnosis.model_dump()
+                ),
+                predictive_diagnosis=(
+                    None if alert.predictive_diagnosis is None else alert.predictive_diagnosis.model_dump()
+                ),
+            )
+
     @staticmethod
     def _normalize_value(value: Any) -> Any:
         if isinstance(value, (int, float, str)):
@@ -458,6 +611,115 @@ class AlertService:
             return float(value)
         except (TypeError, ValueError):
             return str(value)
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _noise_floor(value: float, *, minimum: float = 0.05, ratio: float = 0.02) -> float:
+        return max(abs(value) * ratio, minimum)
+
+    @staticmethod
+    def _is_trend_alignment_consistent(
+        *,
+        raw_value: float,
+        ma_15m: float | None,
+        ma_1h: float | None,
+        is_upward: bool,
+    ) -> bool:
+        if ma_15m is None or ma_1h is None:
+            return True
+        if is_upward:
+            return raw_value >= ma_15m >= ma_1h
+        return raw_value <= ma_15m <= ma_1h
+
+    @staticmethod
+    def _trend_feature_label(feature: str) -> str:
+        labels = {
+            "slope_15m": "ritmo de subida/queda nos ultimos 15 min",
+            "slope_1h": "ritmo de subida/queda na ultima hora",
+            "zscore_1h": "distancia do comportamento normal na ultima hora",
+            "ewma_gap_abs": "distancia do comportamento recente",
+        }
+        return labels.get(feature, feature)
+
+    @staticmethod
+    def _supports_llm_enrichment(alert: AlertRecord) -> bool:
+        if alert.layer in {"fixed_rule", "trend", "predictive_statistics"}:
+            return True
+        if alert.layer == "operational_anomaly" and not str(alert.rule_id).startswith("sensor_stuck::"):
+            return True
+        return False
+
+    @staticmethod
+    def _find_snapshot_for_alert(
+        feature_frame: pd.DataFrame,
+        timestamp: datetime,
+    ) -> pd.Series | None:
+        ts = pd.to_datetime(timestamp, errors="coerce")
+        if pd.isna(ts) or feature_frame.empty:
+            return None
+        eligible = feature_frame[feature_frame["timestamp"] <= ts]
+        if eligible.empty:
+            return None
+        return eligible.iloc[-1]
+
+    def _build_alert_evidence(self, alert: AlertRecord) -> dict[str, Any]:
+        evidence = {
+            "layer": alert.layer,
+            "severity": alert.severity,
+            "rule_id": alert.rule_id,
+            "signal": alert.signal,
+            "threshold": alert.threshold,
+            "mode_key": alert.mode_key,
+            "current_value": alert.current_value,
+            "metadata": alert.metadata,
+        }
+        if alert.predictive_diagnosis is not None:
+            evidence["predictive_diagnosis"] = alert.predictive_diagnosis.model_dump()
+        return evidence
+
+    @staticmethod
+    def _build_snapshot_context(latest: pd.Series) -> dict[str, Any]:
+        context: dict[str, Any] = {}
+        interesting_keys = [
+            "timestamp",
+            "mode_key",
+            "st_oper",
+            "st_carga_oper",
+            "pv_pres_sistema_bar",
+            "pv_pres_descarga_bar",
+            "pv_temp_oleo_lubrificacao_c",
+            "pv_vib_estagio_1_mils",
+            "pv_vib_estagio_2_mils",
+            "pv_vib_estagio_3_mils",
+            "pv_corr_motor_a",
+            "pv_temp_fase_a_do_estator_c",
+            "pv_temp_fase_b_do_estator_c",
+            "pv_temp_fase_c_do_estator_c",
+            "pv_temp_rolamento_dianteiro_motor",
+            "pv_pos_abert_valv_admissao_pct",
+            "pv_pos_valv_bypass_pct",
+            "pv_pos_alivio_pct",
+            "delta_filtro_oleo_bar",
+        ]
+        for key in interesting_keys:
+            value = latest.get(key)
+            if value is None or pd.isna(value):
+                continue
+            if hasattr(value, "isoformat"):
+                context[key] = value.isoformat()
+            elif isinstance(value, (int, float)):
+                context[key] = round(float(value), 4)
+            else:
+                context[key] = str(value)
+        return context
 
     @staticmethod
     def _is_allowed(rule: dict[str, Any], mode_key: str) -> bool:

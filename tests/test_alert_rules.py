@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.domain.schemas import DataQualityIssue
+from app.config import Settings
+from app.domain.schemas import DataQualityIssue, LlmInsight
 from app.services.alert_service import AlertService
 
 
@@ -103,6 +104,54 @@ class AlertServiceTests(unittest.TestCase):
         )
         self.assertEqual(stuck_alert.severity, "low")
         self.assertGreaterEqual(float(stuck_alert.metadata["window_minutes"]), 45.0)
+
+    def test_statistical_anomaly_requires_real_deviation(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": datetime(2026, 4, 11, 8, 0, 0),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_vib_max_mils": 0.302,
+                    "pv_vib_max_mils__zscore_1h": 4.2,
+                    "pv_vib_max_mils__ma_1h": 0.300,
+                    "pv_vib_max_mils__std_1h": 0.001,
+                }
+            ]
+        )
+
+        alerts, _ = self.service.evaluate(frame, [])
+
+        self.assertFalse(any(alert.rule_id == "vibracao_max_em_alta" for alert in alerts))
+
+    def test_statistical_alert_can_receive_llm_enrichment(self) -> None:
+        settings = Settings(gemini_enabled=True, gemini_api_key="test-key")
+        service = AlertService(Path("config/alert_rules.json"), settings=settings)
+        service.gemini_service.generate_alert_insight = lambda **_: LlmInsight(
+            provider="gemini",
+            model="gemini-2.5-flash",
+            confidence=0.72,
+            summary="Leitura sintetica da IA.",
+            insights=["A vibracao saiu do comportamento recente."],
+        )
+        frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": datetime(2026, 4, 11, 9, 0, 0),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_vib_max_mils": 0.38,
+                    "pv_vib_max_mils__zscore_1h": 4.2,
+                    "pv_vib_max_mils__ma_1h": 0.24,
+                    "pv_vib_max_mils__std_1h": 0.03,
+                }
+            ]
+        )
+
+        alerts, _ = service.evaluate(frame, [])
+        service.enrich_alerts_with_llm(alerts, frame)
+
+        target = next(alert for alert in alerts if alert.rule_id == "vibracao_max_em_alta")
+        self.assertIsNotNone(target.llm_insight)
+        self.assertEqual(target.llm_insight.summary, "Leitura sintetica da IA.")
 
 
 if __name__ == "__main__":

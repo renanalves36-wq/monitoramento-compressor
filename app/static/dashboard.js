@@ -15,6 +15,14 @@ const SEVERITY_LABELS = {
   critical: "critica",
 };
 
+const ALERT_TYPE_LABELS = {
+  all: "todos",
+  fixed_rule: "fora da regra",
+  trend: "comportamento/tendencia anormal",
+  operational_anomaly: "anomalia operacional",
+  predictive_statistics: "risco antecipado",
+};
+
 const QUICK_PRESETS = [
   { label: "90 min", value: 90, unit: "minutes", bucket: "minutes" },
   { label: "6 h", value: 6, unit: "hours", bucket: "minutes" },
@@ -45,6 +53,7 @@ const state = {
   recentAlerts: [],
   trends: null,
   subsystem: "all",
+  layer: "all",
   severity: "all",
   signal: null,
   selectedSignals: [],
@@ -82,13 +91,7 @@ function severityClass(severity) {
 }
 
 function layerLabel(layer) {
-  const map = {
-    fixed_rule: "regra fixa",
-    trend: "analise estatistica",
-    operational_anomaly: "anomalia operacional",
-    predictive_statistics: "predicao estatistica",
-  };
-  return map[String(layer || "").toLowerCase()] || String(layer || "--");
+  return ALERT_TYPE_LABELS[String(layer || "").toLowerCase()] || String(layer || "--");
 }
 
 function severityWeight(severity) {
@@ -277,10 +280,10 @@ function formatOperatingRange(lowerLimit, upperLimit, unit = "") {
 
 function featureLabel(feature) {
   const map = {
-    slope_15m: "slope 15 min",
-    slope_1h: "slope 1 h",
-    zscore_1h: "z-score 1 h",
-    ewma_gap_abs: "desvio da EWMA",
+    slope_15m: "ritmo de subida/queda nos ultimos 15 min",
+    slope_1h: "ritmo de subida/queda na ultima hora",
+    zscore_1h: "distancia do comportamento normal na ultima hora",
+    ewma_gap_abs: "distancia do comportamento recente",
   };
   return map[String(feature || "").toLowerCase()] || String(feature || "--");
 }
@@ -302,10 +305,11 @@ function getPreferredSignals() {
 
 function alertMatchesFilters(alert) {
   const matchesSubsystem = state.subsystem === "all" || alert.subsystem === state.subsystem;
+  const matchesLayer = state.layer === "all" || alert.layer === state.layer;
   const matchesSeverity = state.severity === "all" || alert.severity === state.severity;
   const haystack = `${alert.title} ${alert.message} ${alert.rule_id} ${alert.subsystem} ${alert.signal || ""}`.toLowerCase();
   const matchesSearch = !state.search || haystack.includes(state.search.toLowerCase());
-  return matchesSubsystem && matchesSeverity && matchesSearch;
+  return matchesSubsystem && matchesLayer && matchesSeverity && matchesSearch;
 }
 
 function sortAlerts(alerts) {
@@ -369,6 +373,7 @@ function colorForSignal(signal) {
 }
 
 function syncFilterInputs() {
+  document.getElementById("layer-select").value = state.layer;
   document.getElementById("severity-select").value = state.severity;
   document.getElementById("range-value").value = String(state.rangeValue);
   document.getElementById("range-unit").value = state.rangeUnit;
@@ -546,12 +551,12 @@ function buildDiagnosisInline(alert) {
       <div class="diagnosis-panel ${isOpen ? "open" : ""}">
         ${predictive ? `
           <div class="diagnosis-section">
-            <strong>Predicao estatistica</strong>
+            <strong>Leitura antecipada</strong>
             ${buildList([
-              `${predictive.predicted_event === "possible_trip" ? "possivel trip" : "alarme critico"} em ~${formatNumber(predictive.forecast_minutes, 0)} min`,
-              `slope ${formatMaybe(predictive.slope_per_hour, "/h")}`,
-              `R2 ${formatNumber(predictive.regression_r2)}`,
-              `consistencia ${formatNumber((predictive.directional_consistency || 0) * 100, 0)}%`,
+              `${predictive.predicted_event === "possible_trip" ? "possivel trip" : "possivel alarme critico"} em ~${formatNumber(predictive.forecast_minutes, 0)} min`,
+              `ritmo estimado: ${formatMaybe(predictive.slope_per_hour, "/h")}`,
+              `qualidade do ajuste: ${formatNumber(predictive.regression_r2)}`,
+              `consistencia da tendencia: ${formatNumber((predictive.directional_consistency || 0) * 100, 0)}%`,
             ], (item) => item)}
           </div>
         ` : ""}
@@ -624,7 +629,7 @@ function renderContextPanel() {
           <div class="stack-top">
             <div>
               <div class="stack-title-main">${rule.title}</div>
-              <div class="stack-meta">${rule.rule_id} | ${rule.layer}</div>
+              <div class="stack-meta">${rule.rule_id} | ${layerLabel(rule.layer)}</div>
             </div>
             <span class="severity-pill ${severityClass(rule.severity)}">${severityLabel(rule.severity)}</span>
           </div>
@@ -676,10 +681,15 @@ function renderAlertList(containerId, alerts, emptyText, counterId) {
 function buildAlertFooter(alert) {
   const metadata = alert.metadata || {};
   if (alert.layer === "trend" && metadata.feature) {
+    const referenceLabel = metadata.reference_label || "referencia recente";
+    const analysisLabel = metadata.analysis_label || "comportamento anormal";
+    const analysisReason = metadata.analysis_reason ? ` | leitura: ${metadata.analysis_reason}` : "";
     return `
       <div class="stack-footer">
         Valor do sinal: ${formatMaybe(metadata.signal_value ?? alert.current_value)}
-        | indice estatistico ${featureLabel(metadata.feature)}: ${formatMaybe(metadata.feature_value)}
+        | ${referenceLabel}: ${formatMaybe(metadata.reference_value)}
+        | ${analysisLabel}: ${featureLabel(metadata.feature)} (${formatMaybe(metadata.feature_value)})
+        ${analysisReason}
         | ultima ocorrencia: ${formatDateTime(alert.last_seen_at)}
       </div>
     `;
@@ -1469,6 +1479,17 @@ function attachEvents() {
     renderAll();
     setTrendLoading();
     await loadTrends();
+  });
+
+  document.getElementById("layer-select").addEventListener("change", () => {
+    state.layer = document.getElementById("layer-select").value;
+    renderOperationalPanel();
+    renderScorePanel();
+    renderContextPanel();
+    renderAlertPanels();
+    renderSignalExplorer();
+    renderCharts();
+    bindDynamicEvents();
   });
 
   document.getElementById("severity-select").addEventListener("change", () => {

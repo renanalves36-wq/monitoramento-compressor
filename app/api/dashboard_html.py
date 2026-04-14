@@ -10,7 +10,7 @@ DASHBOARD_HTML = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel TA6000</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260413-ai-predictive-2" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260414-alert-filter-1" />
 </head>
 <body>
   <main class="shell">
@@ -51,6 +51,16 @@ DASHBOARD_HTML = """
         <div class="field field-wide">
           <label for="signal-multiselect">Indicadores no grafico</label>
           <select id="signal-multiselect" multiple size="6"></select>
+        </div>
+        <div class="field">
+          <label for="layer-select">Tipo de alerta</label>
+          <select id="layer-select">
+            <option value="all">todos</option>
+            <option value="fixed_rule">fora da regra</option>
+            <option value="trend">comportamento/tendencia anormal</option>
+            <option value="operational_anomaly">anomalia operacional</option>
+            <option value="predictive_statistics">risco antecipado</option>
+          </select>
         </div>
         <div class="field">
           <label for="severity-select">Prioridade</label>
@@ -197,7 +207,7 @@ DASHBOARD_HTML = """
     </section>
   </main>
 
-  <script src="/static/dashboard.js?v=20260413-ai-predictive-2" defer></script>
+  <script src="/static/dashboard.js?v=20260414-alert-filter-1" defer></script>
 </body>
 </html>
 """

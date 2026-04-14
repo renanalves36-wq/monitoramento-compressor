@@ -114,6 +114,14 @@ class HealthService:
                 reverse=True,
             )
             risk_scores = self.alert_service._compute_scores(active_alerts)
+
+        llm_candidates = [*active_alerts, *event_history[:12]]
+        self.alert_service.enrich_alerts_with_llm(
+            llm_candidates,
+            self._feature_frame,
+            max_count=10,
+        )
+
         self.repository.replace_active_alerts(active_alerts)
         self._active_alerts = active_alerts
         self._alert_events = event_history

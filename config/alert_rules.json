@@ -209,8 +209,8 @@
       "condition": "gt",
       "threshold": 0.15,
       "severity": "medium",
-      "title": "Tendencia de aquecimento do oleo",
-      "message": "A temperatura do oleo esta subindo de forma sustentada na janela de 15 minutos.",
+      "title": "Oleo subindo de forma anormal",
+      "message": "A temperatura do oleo mostra uma subida sustentada e fora do comportamento recente.",
       "allowed_modes": [
         "EM FUNCIONAMENTO|CARREGADO"
       ]
@@ -223,8 +223,8 @@
       "condition": "gt",
       "threshold": 2.5,
       "severity": "medium",
-      "title": "Comportamento de vibracao anormal",
-      "message": "A vibracao maxima fugiu do padrao estatistico da ultima hora.",
+      "title": "Vibracao fora do comportamento normal",
+      "message": "A vibracao maxima saiu do comportamento recente esperado e merece acompanhamento.",
       "allowed_modes": [
         "EM FUNCIONAMENTO|CARREGADO"
       ]
@@ -237,8 +237,8 @@
       "condition": "gt",
       "threshold": 0.05,
       "severity": "low",
-      "title": "Corrente do motor em tendencia de subida",
-      "message": "A corrente do motor mostra inclinacao positiva persistente na ultima hora.",
+      "title": "Corrente do motor subindo",
+      "message": "A corrente do motor vem subindo de forma sustentada na ultima hora.",
       "allowed_modes": [
         "EM FUNCIONAMENTO|CARREGADO"
       ]
@@ -251,8 +251,8 @@
       "condition": "gt",
       "threshold": 0.6,
       "severity": "low",
-      "title": "Desvio operacional na pressao de descarga",
-      "message": "A pressao de descarga esta se afastando da referencia suavizada.",
+      "title": "Pressao de descarga diferente do comportamento recente",
+      "message": "A pressao de descarga se afastou do comportamento recente de forma relevante.",
       "allowed_modes": [
         "EM FUNCIONAMENTO|CARREGADO"
       ]
