@@ -159,6 +159,38 @@ class TrendLimitsTests(unittest.TestCase):
         self.assertEqual(len(response.series), 1)
         self.assertEqual(response.series[0].signal, "pv_pres_sistema_bar")
 
+    def test_trend_requests_reuse_cached_feature_frame_without_refresh(self) -> None:
+        start = datetime(2026, 4, 9, 7, 0, 0)
+        self.service._feature_frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": start,
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_pres_sistema_bar": 6.8,
+                },
+                {
+                    "timestamp": start + timedelta(minutes=1),
+                    "mode_key": "EM FUNCIONAMENTO|CARREGADO",
+                    "pv_pres_sistema_bar": 7.0,
+                },
+            ]
+        )
+        self.service._history_frame = self.service._feature_frame.copy()
+        self.service.refresh = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("refresh nao deveria ser chamado")
+        )
+
+        response = self.service.get_multi_signal_trend_window(
+            signals=["pv_pres_sistema_bar"],
+            range_value=2,
+            range_unit="points",
+            bucket="raw",
+            max_points=200,
+        )
+
+        self.assertEqual(len(response.series), 1)
+        self.assertEqual(response.series[0].count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
