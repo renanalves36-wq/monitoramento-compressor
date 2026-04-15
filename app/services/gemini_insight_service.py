@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -32,11 +33,13 @@ class GeminiInsightService:
         self.attempts = 0
         self.successes = 0
         self.failures = 0
+        self.cache_hits = 0
         self.last_attempt_at: datetime | None = None
         self.last_success_at: datetime | None = None
         self.last_error: str | None = None
         self.last_signal: str | None = None
         self.last_layer: str | None = None
+        self._insight_cache: dict[str, LlmInsight] = {}
 
     def enabled(self) -> bool:
         return bool(self.settings.gemini_enabled and self.settings.gemini_api_key)
@@ -49,6 +52,8 @@ class GeminiInsightService:
             "attempts": self.attempts,
             "successes": self.successes,
             "failures": self.failures,
+            "cache_hits": self.cache_hits,
+            "cached_insights": len(self._insight_cache),
             "last_attempt_at": self.last_attempt_at,
             "last_success_at": self.last_success_at,
             "last_error": self.last_error,
@@ -65,6 +70,7 @@ class GeminiInsightService:
         snapshot: dict[str, Any],
         evidence: dict[str, Any],
         prescriptive_diagnosis: dict[str, Any] | None,
+        cache_key: str | None = None,
     ) -> LlmInsight | None:
         return self.generate_alert_insight(
             layer="predictive_statistics",
@@ -75,6 +81,7 @@ class GeminiInsightService:
             evidence=evidence,
             prescriptive_diagnosis=prescriptive_diagnosis,
             predictive_diagnosis=evidence,
+            cache_key=cache_key,
         )
 
     def generate_alert_insight(
@@ -88,9 +95,13 @@ class GeminiInsightService:
         evidence: dict[str, Any],
         prescriptive_diagnosis: dict[str, Any] | None = None,
         predictive_diagnosis: dict[str, Any] | None = None,
+        cache_key: str | None = None,
     ) -> LlmInsight | None:
         if not self.enabled():
             return None
+        if cache_key and cache_key in self._insight_cache:
+            self.cache_hits += 1
+            return self._insight_cache[cache_key].model_copy(deep=True)
 
         self.attempts += 1
         self.last_attempt_at = datetime.now(timezone.utc)
@@ -121,7 +132,7 @@ class GeminiInsightService:
         self.successes += 1
         self.last_success_at = datetime.now(timezone.utc)
 
-        return LlmInsight(
+        insight = LlmInsight(
             provider="gemini",
             model=self.settings.gemini_model,
             confidence=float(payload.confidence),
@@ -140,6 +151,9 @@ class GeminiInsightService:
             ],
             acoes_recomendadas=payload.recommended_actions,
         )
+        if cache_key:
+            self._insight_cache[cache_key] = insight.model_copy(deep=True)
+        return insight
 
     def _call_gemini(
         self,
@@ -195,6 +209,10 @@ class GeminiInsightService:
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
 
+        recovered = cls._recover_payload_from_malformed_json(cleaned)
+        if recovered is not None:
+            return recovered
+
         return cls._fallback_payload_from_text(text)
 
     @staticmethod
@@ -218,6 +236,126 @@ class GeminiInsightService:
             return None
         return text[start : end + 1]
 
+    @classmethod
+    def _recover_payload_from_malformed_json(cls, text: str) -> _GeminiInsightPayload | None:
+        summary = cls._extract_string_field(text, "summary")
+        insights = cls._extract_string_array(text, "insights")
+        observations = cls._extract_string_array(text, "observations")
+        actions = cls._extract_string_array(text, "recommended_actions")
+        false_positive_risk = cls._extract_choice_field(
+            text,
+            "false_positive_risk",
+            allowed={"low", "medium", "high"},
+            default="medium",
+        )
+        confidence = cls._extract_number_field(text, "confidence")
+
+        if not summary and not insights and not observations and not actions:
+            return None
+
+        return _GeminiInsightPayload(
+            summary=summary or (insights[0] if insights else "A IA retornou uma leitura parcial."),
+            insights=cls._unique_texts(insights),
+            observations=cls._unique_texts(
+                [
+                    *observations,
+                    "A resposta da IA veio parcialmente fora do formato esperado; o sistema recuperou os trechos uteis.",
+                ]
+            ),
+            false_positive_risk=false_positive_risk,
+            confidence=0.45 if confidence is None else max(0.0, min(1.0, confidence)),
+            hypotheses=[],
+            recommended_actions=cls._unique_texts(actions),
+        )
+
+    @classmethod
+    def _extract_string_field(cls, text: str, field: str) -> str | None:
+        match = re.search(rf'"{re.escape(field)}"\s*:\s*"', text)
+        if not match:
+            return None
+
+        value_chars: list[str] = []
+        escaped = False
+        for char in text[match.end() :]:
+            if escaped:
+                value_chars.append(char)
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                break
+            value_chars.append(char)
+
+        return cls._clean_ai_text("".join(value_chars))
+
+    @classmethod
+    def _extract_string_array(cls, text: str, field: str) -> list[str]:
+        match = re.search(rf'"{re.escape(field)}"\s*:\s*\[', text)
+        if not match:
+            return []
+
+        start = match.end()
+        end = text.find("]", start)
+        segment = text[start:] if end < 0 else text[start:end]
+        values = [
+            cls._clean_ai_text(raw)
+            for raw in re.findall(r'"((?:\\.|[^"\\])*)"', segment)
+        ]
+        return [value for value in values if value]
+
+    @staticmethod
+    def _extract_number_field(text: str, field: str) -> float | None:
+        match = re.search(rf'"{re.escape(field)}"\s*:\s*([0-9]+(?:\.[0-9]+)?)', text)
+        if not match:
+            return None
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _extract_choice_field(
+        text: str,
+        field: str,
+        *,
+        allowed: set[str],
+        default: str,
+    ) -> str:
+        match = re.search(rf'"{re.escape(field)}"\s*:\s*"([^"]+)"', text)
+        if not match:
+            return default
+        value = match.group(1).strip().lower()
+        return value if value in allowed else default
+
+    @staticmethod
+    def _clean_ai_text(text: str | None) -> str | None:
+        if not text:
+            return None
+        cleaned = text.replace("\\n", " ").replace("\n", " ")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,")
+        if not cleaned:
+            return None
+        if len(cleaned) > 700:
+            cleaned = f"{cleaned[:700]}..."
+        return cleaned
+
+    @staticmethod
+    def _unique_texts(items: list[str | None]) -> list[str]:
+        unique: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            text = (item or "").strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(text)
+        return unique
+
     @staticmethod
     def _fallback_payload_from_text(text: str) -> _GeminiInsightPayload:
         cleaned = " ".join((text or "").split())
@@ -227,7 +365,7 @@ class GeminiInsightService:
         summary = cleaned or "A IA respondeu, mas nao retornou um texto aproveitavel."
         return _GeminiInsightPayload(
             summary=summary,
-            insights=([summary] if cleaned else []),
+            insights=[],
             observations=[
                 "A resposta da IA veio fora do formato JSON esperado; o sistema exibiu a leitura em modo texto seguro.",
             ],

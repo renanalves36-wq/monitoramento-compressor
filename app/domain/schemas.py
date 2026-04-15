@@ -228,6 +228,8 @@ class AiStatusResponse(BaseModel):
     attempts: int = 0
     successes: int = 0
     failures: int = 0
+    cache_hits: int = 0
+    cached_insights: int = 0
     last_attempt_at: datetime | None = None
     last_success_at: datetime | None = None
     last_error: str | None = None

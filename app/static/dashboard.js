@@ -79,6 +79,42 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function uniqueTexts(items) {
+  const unique = [];
+  const seen = new Set();
+  safeArray(items).forEach((item) => {
+    const text = String(item || "").trim();
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(text);
+  });
+  return unique;
+}
+
+function cleanAiText(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (!text.startsWith("{")) return text;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.summary || text;
+  } catch (_error) {
+    const match = text.match(/"summary"\s*:\s*"([^"]+)/);
+    return match ? match[1] : text;
+  }
+}
+
 function friendlySubsystem(value) {
   return SUBSYSTEM_LABELS[value] || String(value || "--");
 }
@@ -454,7 +490,7 @@ function renderTopbar() {
   document.getElementById("badge-range").textContent = `Cobertura: ${formatDateTime(status.earliest_timestamp)} ate ${formatDateTime(status.latest_timestamp)}`;
   document.getElementById("badge-rows").textContent = `Leituras: ${formatNumber(status.history_rows, 0)}`;
   const aiLabel = aiStatus.enabled
-    ? `IA: ativa | ${formatNumber(aiStatus.successes, 0)}/${formatNumber(aiStatus.attempts, 0)} leituras`
+    ? `IA: ativa | ${formatNumber(aiStatus.attempts, 0)} chamadas | ${formatNumber(aiStatus.cache_hits, 0)} cache`
     : `IA: ${aiStatus.has_api_key ? "desativada" : "sem chave"}`;
   const aiError = aiStatus.last_error ? ` | ultimo erro: ${aiStatus.last_error}` : "";
   document.getElementById("badge-ai").textContent = `${aiLabel}${aiError}`;
@@ -538,8 +574,14 @@ function buildDiagnosisInline(alert) {
     if (!rows.length) {
       return '<div class="stack-meta">Sem itens adicionais.</div>';
     }
-    return `<ul class="diagnosis-list">${rows.map((item) => `<li>${formatter(item)}</li>`).join("")}</ul>`;
+    return `<ul class="diagnosis-list">${rows.map((item) => `<li>${escapeHtml(formatter(item))}</li>`).join("")}</ul>`;
   };
+  const aiSummary = cleanAiText(llmInsight?.summary || "");
+  const aiInsights = uniqueTexts(llmInsight?.insights)
+    .map(cleanAiText)
+    .filter((item) => item && item.toLowerCase() !== aiSummary.toLowerCase());
+  const aiObservations = uniqueTexts(llmInsight?.observacoes).map(cleanAiText).filter(Boolean);
+  const aiActions = uniqueTexts(llmInsight?.acoes_recomendadas).map(cleanAiText).filter(Boolean);
 
   return `
     <div class="alert-diagnosis">
@@ -582,10 +624,16 @@ function buildDiagnosisInline(alert) {
           </div>
         ` : ""}
         ${llmInsight ? `
-          <div class="diagnosis-section">
+          <div class="diagnosis-section ai-section">
             <strong>Leitura de IA</strong>
-            <div class="stack-meta">${llmInsight.summary || "Sem resumo adicional."}</div>
-            ${buildList(llmInsight.insights, (item) => item)}
+            <div class="ai-card">
+              <div class="ai-card-top">
+                <span class="diagnosis-score-tag">confianca ${formatNumber((llmInsight.confidence || 0) * 100, 0)}%</span>
+                <span class="diagnosis-score-tag">falso positivo: ${escapeHtml(severityLabel(llmInsight.false_positive_risk || "medium"))}</span>
+              </div>
+              <p class="ai-summary">${escapeHtml(aiSummary || "Sem resumo adicional.")}</p>
+              ${aiInsights.length ? buildList(aiInsights, (item) => item) : ""}
+            </div>
           </div>
           <div class="diagnosis-section">
             <strong>Hipoteses da IA</strong>
@@ -593,11 +641,11 @@ function buildDiagnosisInline(alert) {
           </div>
           <div class="diagnosis-section">
             <strong>Acoes sugeridas pela IA</strong>
-            ${buildList(llmInsight.acoes_recomendadas, (item) => item)}
+            ${buildList(aiActions, (item) => item)}
           </div>
           <div class="diagnosis-section">
             <strong>Cautelas e observacoes</strong>
-            ${buildList(llmInsight.observacoes, (item) => item)}
+            ${buildList(aiObservations, (item) => item)}
           </div>
         ` : ""}
       </div>

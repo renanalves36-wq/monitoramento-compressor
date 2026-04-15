@@ -615,6 +615,7 @@ class AlertService:
                 predictive_diagnosis=(
                     None if alert.predictive_diagnosis is None else alert.predictive_diagnosis.model_dump()
                 ),
+                cache_key=self._build_llm_cache_key(alert),
             )
             if alert.llm_insight is not None:
                 self.logger.info(
@@ -709,6 +710,17 @@ class AlertService:
         if alert.predictive_diagnosis is not None:
             evidence["predictive_diagnosis"] = alert.predictive_diagnosis.model_dump()
         return evidence
+
+    @staticmethod
+    def _build_llm_cache_key(alert: AlertRecord) -> str:
+        return "|".join(
+            [
+                alert.alert_id,
+                alert.rule_id,
+                alert.layer,
+                alert.signal or "",
+            ]
+        )
 
     @staticmethod
     def _build_snapshot_context(latest: pd.Series) -> dict[str, Any]:

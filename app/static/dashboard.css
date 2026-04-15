@@ -879,6 +879,32 @@ select option {
   margin-top: 4px;
 }
 
+.ai-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(57, 199, 194, 0.18);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(57, 199, 194, 0.08), rgba(119, 210, 143, 0.04));
+}
+
+.ai-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-summary {
+  margin: 0;
+  color: #dfe6ef;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.ai-section .diagnosis-list {
+  padding-left: 16px;
+}
+
 .empty-state {
   padding: 12px;
   border-radius: var(--radius-md);
