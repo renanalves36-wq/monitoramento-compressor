@@ -254,7 +254,9 @@ class GeminiInsightService:
             return None
 
         return _GeminiInsightPayload(
-            summary=summary or (insights[0] if insights else "A IA retornou uma leitura parcial."),
+            summary=cls._finalize_recovered_text(
+                summary or (insights[0] if insights else "A IA retornou uma leitura parcial.")
+            ),
             insights=cls._unique_texts(insights),
             observations=cls._unique_texts(
                 [
@@ -342,6 +344,15 @@ class GeminiInsightService:
         return cleaned
 
     @staticmethod
+    def _finalize_recovered_text(text: str | None) -> str:
+        cleaned = text or "A IA retornou uma leitura parcial."
+        if cleaned[-1:] in {".", "!", "?"}:
+            return cleaned
+        if len(cleaned) >= 90:
+            return f"{cleaned.rstrip(' ,;')}. Leitura parcial recuperada da IA."
+        return f"{cleaned.rstrip(' ,;')}."
+
+    @staticmethod
     def _unique_texts(items: list[str | None]) -> list[str]:
         unique: list[str] = []
         seen: set[str] = set()
@@ -396,6 +407,7 @@ Nao afirme causa confirmada. Rankeie hipoteses e destaque risco de falso positiv
 Traduza termos estatisticos para linguagem simples e util para operacao.
 Responda somente com JSON valido, sem markdown, sem comentarios antes ou depois.
 Nao use quebra de linha dentro de strings; use frases curtas.
+Seja muito conciso: summary ate 180 caracteres, ate 2 insights, ate 2 hypotheses, ate 3 recommended_actions e ate 2 observations.
 
 Contexto do alerta:
 - camada do alerta: {layer}
@@ -417,7 +429,7 @@ Prescricao deterministica atual:
 
 Formato obrigatorio:
 {{
-  "summary": "resumo executivo em 1 ou 2 frases",
+  "summary": "resumo executivo curto",
   "insights": ["insight operacional curto"],
   "observations": ["cautela ou observacao curta"],
   "false_positive_risk": "low|medium|high",

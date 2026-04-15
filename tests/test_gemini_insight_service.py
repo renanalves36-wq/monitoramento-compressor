@@ -51,7 +51,7 @@ class GeminiInsightParsingTest(unittest.TestCase):
 
         self.assertEqual(
             payload.summary,
-            "Corrente do motor acima do normal, mas sem confirmacao de causa",
+            "Corrente do motor acima do normal, mas sem confirmacao de causa.",
         )
         self.assertEqual(payload.insights, ["Comparar corrente com pressao de descarga"])
         self.assertEqual(payload.confidence, 0.61)

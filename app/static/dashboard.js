@@ -105,14 +105,22 @@ function uniqueTexts(items) {
 function cleanAiText(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
-  if (!text.startsWith("{")) return text;
+  if (!text.startsWith("{")) return finalizeDisplaySentence(text);
   try {
     const parsed = JSON.parse(text);
-    return parsed.summary || text;
+    return finalizeDisplaySentence(parsed.summary || text);
   } catch (_error) {
     const match = text.match(/"summary"\s*:\s*"([^"]+)/);
-    return match ? match[1] : text;
+    return finalizeDisplaySentence(match ? match[1] : text);
   }
+}
+
+function finalizeDisplaySentence(text) {
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return "";
+  if (/[.!?]$/.test(cleaned)) return cleaned;
+  if (cleaned.length > 90) return `${cleaned.replace(/[ ,;:]+$/, "")}. Leitura parcial recuperada da IA.`;
+  return `${cleaned.replace(/[ ,;:]+$/, "")}.`;
 }
 
 function friendlySubsystem(value) {
@@ -368,6 +376,42 @@ function getFilteredRecentAlerts() {
     .sort((left, right) => new Date(right.last_seen_at) - new Date(left.last_seen_at));
 }
 
+function buildOperationalGuidance() {
+  const activeAlerts = getFilteredActiveAlerts();
+  const topScore = safeArray(state.scores).find((item) => item.active_alerts > 0);
+  const highestAlert = activeAlerts[0] || null;
+  const aiAlert = activeAlerts.find((alert) => alert.llm_insight?.summary);
+  const focusSubsystem = highestAlert?.subsystem || topScore?.subsystem || state.subsystem;
+  const focusLabel = friendlySubsystem(focusSubsystem === "all" ? topScore?.subsystem : focusSubsystem);
+
+  if (!activeAlerts.length) {
+    return {
+      level: "ok",
+      title: "Operacao sem alerta ativo nos filtros atuais",
+      summary: "Mantenha acompanhamento de tendencia e qualidade de dados. Nao ha prioridade operacional destacada neste filtro.",
+      focus: "Rotina de acompanhamento",
+    };
+  }
+
+  const severity = highestAlert.severity || topScore?.highest_severity || "medium";
+  const summaryFromAi = cleanAiText(aiAlert?.llm_insight?.summary || "");
+  const summary = summaryFromAi || `${highestAlert.title}. Priorize verificacao no subsistema ${focusLabel}.`;
+  const hasInstrumentationSignal = activeAlerts.some((alert) => {
+    const text = `${alert.title} ${alert.message} ${alert.rule_id}`.toLowerCase();
+    return text.includes("sensor") || text.includes("instrument") || text.includes("escala") || text.includes("zerad");
+  });
+  const focus = hasInstrumentationSignal
+    ? "Validar instrumentacao antes de intervencao fisica"
+    : `Focar primeiro em ${focusLabel}`;
+
+  return {
+    level: severity,
+    title: `Direcionamento operacional: ${focusLabel}`,
+    summary,
+    focus,
+  };
+}
+
 function getSignalAlertEvents(signal) {
   const merged = [...safeArray(state.activeAlerts), ...safeArray(state.recentAlerts)];
   const unique = [];
@@ -514,6 +558,18 @@ function renderOperationalPanel() {
       <div class="stack-footer"><span class="severity-pill ${styleClass}">${label === "Modo observado" ? "contexto" : "ok"}</span></div>
     </div>
   `).join("");
+
+  const guidance = buildOperationalGuidance();
+  document.getElementById("operational-guidance").innerHTML = `
+    <div class="guidance-card guidance-${String(guidance.level || "medium").toLowerCase()}">
+      <div>
+        <span class="guidance-eyebrow">Leitura inteligente</span>
+        <strong>${escapeHtml(guidance.title)}</strong>
+        <p>${escapeHtml(guidance.summary)}</p>
+      </div>
+      <span class="guidance-focus">${escapeHtml(guidance.focus)}</span>
+    </div>
+  `;
 
   const heroSignals = getPreferredSignals();
   const activeAlerts = getFilteredActiveAlerts();

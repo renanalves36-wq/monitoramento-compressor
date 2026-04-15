@@ -454,6 +454,71 @@ select option {
   margin-bottom: 10px;
 }
 
+.operational-guidance {
+  margin-bottom: 10px;
+}
+
+.guidance-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(57, 199, 194, 0.16);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(57, 199, 194, 0.08), rgba(119, 210, 143, 0.04));
+}
+
+.guidance-card strong {
+  display: block;
+  color: var(--heading);
+  font-size: 0.98rem;
+}
+
+.guidance-card p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.guidance-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--yellow);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.guidance-focus {
+  flex: 0 0 auto;
+  max-width: 260px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.guidance-critical,
+.guidance-high {
+  border-color: rgba(240, 109, 109, 0.24);
+  background: linear-gradient(135deg, rgba(240, 109, 109, 0.1), rgba(239, 154, 86, 0.06));
+}
+
+.guidance-medium {
+  border-color: rgba(240, 198, 90, 0.22);
+  background: linear-gradient(135deg, rgba(240, 198, 90, 0.1), rgba(239, 154, 86, 0.05));
+}
+
+.guidance-ok,
+.guidance-low {
+  border-color: rgba(119, 210, 143, 0.2);
+}
+
 .kpi-grid,
 .context-grid,
 .trend-summary-grid {
@@ -959,6 +1024,15 @@ select option {
   .context-grid,
   .trend-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .guidance-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .guidance-focus {
+    max-width: none;
   }
 
   .range-inline {

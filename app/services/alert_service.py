@@ -719,6 +719,8 @@ class AlertService:
                 alert.rule_id,
                 alert.layer,
                 alert.signal or "",
+                alert.severity,
+                alert.triggered_at.isoformat(),
             ]
         )
 
