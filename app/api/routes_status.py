@@ -59,6 +59,13 @@ def refresh_ai_insights(
     return service.force_ai_refresh()
 
 
+@router.get("/ai/refresh", response_model=AiStatusResponse)
+def refresh_ai_insights_from_browser(
+    service: HealthService = Depends(get_health_service),
+) -> AiStatusResponse:
+    return service.force_ai_refresh()
+
+
 @router.get("/catalog", response_model=SignalCatalogResponse)
 def get_signal_catalog(
     service: HealthService = Depends(get_health_service),

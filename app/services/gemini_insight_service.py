@@ -19,7 +19,7 @@ class _GeminiInsightPayload(BaseModel):
     observations: list[str] = Field(default_factory=list)
     false_positive_risk: str = "medium"
     confidence: float = 0.0
-    hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    hypotheses: list[LlmInsightHypothesis] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
 
 
@@ -131,12 +131,12 @@ class GeminiInsightService:
             false_positive_risk=payload.false_positive_risk,
             hipoteses=[
                 LlmInsightHypothesis(
-                    causa=str(item.get("causa", "")),
-                    confianca=float(item.get("confianca", 0.0)),
-                    racional=None if not item.get("racional") else str(item.get("racional")),
+                    causa=item.causa,
+                    confianca=float(item.confianca),
+                    racional=item.racional,
                 )
                 for item in payload.hypotheses
-                if item.get("causa")
+                if item.causa
             ],
             acoes_recomendadas=payload.recommended_actions,
         )
