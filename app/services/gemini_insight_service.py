@@ -174,14 +174,70 @@ class GeminiInsightService:
                 temperature=self.settings.gemini_temperature,
                 max_output_tokens=self.settings.gemini_max_output_tokens,
                 response_mime_type="application/json",
-                response_schema=_GeminiInsightPayload,
             ),
         )
         parsed = getattr(response, "parsed", None)
         if parsed is not None:
-            return parsed
-        text = getattr(response, "text", "") or "{}"
-        return _GeminiInsightPayload.model_validate(json.loads(text))
+            return _GeminiInsightPayload.model_validate(parsed)
+        text = getattr(response, "text", "") or ""
+        return self._parse_payload_from_text(text)
+
+    @classmethod
+    def _parse_payload_from_text(cls, text: str) -> _GeminiInsightPayload:
+        cleaned = cls._strip_json_fence(text)
+        candidates = [cleaned, cls._extract_json_object(cleaned)]
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                return _GeminiInsightPayload.model_validate(json.loads(candidate))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+
+        return cls._fallback_payload_from_text(text)
+
+    @staticmethod
+    def _strip_json_fence(text: str) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned.startswith("```"):
+            return cleaned
+
+        lines = cleaned.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _extract_json_object(text: str) -> str | None:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        return text[start : end + 1]
+
+    @staticmethod
+    def _fallback_payload_from_text(text: str) -> _GeminiInsightPayload:
+        cleaned = " ".join((text or "").split())
+        if len(cleaned) > 900:
+            cleaned = f"{cleaned[:900]}..."
+
+        summary = cleaned or "A IA respondeu, mas nao retornou um texto aproveitavel."
+        return _GeminiInsightPayload(
+            summary=summary,
+            insights=([summary] if cleaned else []),
+            observations=[
+                "A resposta da IA veio fora do formato JSON esperado; o sistema exibiu a leitura em modo texto seguro.",
+            ],
+            false_positive_risk="medium",
+            confidence=0.35,
+            hypotheses=[],
+            recommended_actions=[
+                "Validar este alerta junto das regras, tendencias e prescricao deterministica do sistema.",
+            ],
+        )
 
     @staticmethod
     def _build_prompt(
@@ -200,6 +256,8 @@ Voce e um analista industrial de confiabilidade.
 Trabalhe com linguagem profissional, objetiva e operacional.
 Nao afirme causa confirmada. Rankeie hipoteses e destaque risco de falso positivo.
 Traduza termos estatisticos para linguagem simples e util para operacao.
+Responda somente com JSON valido, sem markdown, sem comentarios antes ou depois.
+Nao use quebra de linha dentro de strings; use frases curtas.
 
 Contexto do alerta:
 - camada do alerta: {layer}
@@ -219,14 +277,18 @@ Diagnostico preditivo atual:
 Prescricao deterministica atual:
 {json.dumps(prescriptive_diagnosis or {}, ensure_ascii=False, indent=2)}
 
-Retorne JSON estruturado com:
-- summary: resumo executivo em 1 ou 2 frases
-- insights: lista curta de insights operacionais
-- observations: lista curta de observacoes e cautelas
-- false_positive_risk: low, medium ou high
-- confidence: numero entre 0 e 1
-- hypotheses: lista com causa, confianca e racional
-- recommended_actions: lista curta e priorizada
+Formato obrigatorio:
+{{
+  "summary": "resumo executivo em 1 ou 2 frases",
+  "insights": ["insight operacional curto"],
+  "observations": ["cautela ou observacao curta"],
+  "false_positive_risk": "low|medium|high",
+  "confidence": 0.0,
+  "hypotheses": [
+    {{"causa": "hipotese sem afirmar causa confirmada", "confianca": 0.0, "racional": "evidencia usada"}}
+  ],
+  "recommended_actions": ["acao priorizada curta"]
+}}
 
 Se a evidencia for fraca, reduza a confianca e explicite a cautela.
 Se o alerta for estatistico, explique em palavras simples se isso parece:
