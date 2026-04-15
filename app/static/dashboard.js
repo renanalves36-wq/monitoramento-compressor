@@ -48,6 +48,7 @@ const state = {
   catalog: null,
   status: null,
   snapshot: null,
+  aiStatus: null,
   scores: [],
   activeAlerts: [],
   recentAlerts: [],
@@ -443,6 +444,7 @@ function renderSelectedSignals() {
 function renderTopbar() {
   const snapshot = state.snapshot || {};
   const status = state.status || {};
+  const aiStatus = state.aiStatus || {};
   const modeLabel = [snapshot.st_oper, snapshot.st_carga_oper].filter(Boolean).join(" - ") || "Sem modo identificado";
   document.getElementById("hero-status").textContent = modeLabel;
   document.getElementById("hero-description").textContent =
@@ -451,6 +453,11 @@ function renderTopbar() {
   document.getElementById("badge-refresh").textContent = `Atualizacao: ${formatDateTime(status.last_refresh_at)}`;
   document.getElementById("badge-range").textContent = `Cobertura: ${formatDateTime(status.earliest_timestamp)} ate ${formatDateTime(status.latest_timestamp)}`;
   document.getElementById("badge-rows").textContent = `Leituras: ${formatNumber(status.history_rows, 0)}`;
+  const aiLabel = aiStatus.enabled
+    ? `IA: ativa | ${formatNumber(aiStatus.successes, 0)}/${formatNumber(aiStatus.attempts, 0)} leituras`
+    : `IA: ${aiStatus.has_api_key ? "desativada" : "sem chave"}`;
+  const aiError = aiStatus.last_error ? ` | ultimo erro: ${aiStatus.last_error}` : "";
+  document.getElementById("badge-ai").textContent = `${aiLabel}${aiError}`;
 }
 
 function renderOperationalPanel() {
@@ -1443,11 +1450,12 @@ async function loadTrends() {
 }
 
 async function loadBaseData() {
-  const [catalogData, statusData, snapshotData, scoresData, activeData, recentData] = await Promise.all([
+  const [catalogData, statusData, snapshotData, scoresData, aiData, activeData, recentData] = await Promise.all([
     fetchJson("/status/catalog"),
     fetchJson("/status"),
     fetchJson("/status/current"),
     fetchJson("/status/scores"),
+    fetchJson("/status/ai"),
     fetchJson("/alerts"),
     fetchJson(`/alerts/recent?limit=${RECENT_ALERT_FETCH_LIMIT}`),
   ]);
@@ -1455,6 +1463,7 @@ async function loadBaseData() {
   state.catalog = catalogData;
   state.status = statusData;
   state.snapshot = snapshotData;
+  state.aiStatus = aiData;
   state.scores = safeArray(scoresData.scores);
   state.activeAlerts = safeArray(activeData.alerts);
   state.recentAlerts = safeArray(recentData.alerts);

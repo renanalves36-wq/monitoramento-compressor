@@ -10,7 +10,7 @@ DASHBOARD_HTML = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel TA6000</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260414-alert-filter-1" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260415-ai-status-1" />
 </head>
 <body>
   <main class="shell">
@@ -30,6 +30,7 @@ DASHBOARD_HTML = """
           <div class="meta-chip" id="badge-refresh">Atualizacao: --</div>
           <div class="meta-chip" id="badge-range">Cobertura: --</div>
           <div class="meta-chip" id="badge-rows">Leituras: --</div>
+          <div class="meta-chip" id="badge-ai">IA: --</div>
         </div>
       </div>
     </header>
@@ -207,7 +208,7 @@ DASHBOARD_HTML = """
     </section>
   </main>
 
-  <script src="/static/dashboard.js?v=20260414-alert-filter-1" defer></script>
+  <script src="/static/dashboard.js?v=20260415-ai-status-1" defer></script>
 </body>
 </html>
 """

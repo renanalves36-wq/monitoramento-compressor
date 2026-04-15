@@ -31,6 +31,7 @@ from app.domain.schemas import (
     TrendPoint,
     TrendRuleSummary,
     TrendSummary,
+    AiStatusResponse,
 )
 from app.services.alert_service import AlertService
 from app.services.feature_service import FeatureService
@@ -465,6 +466,25 @@ class HealthService:
             active_alerts=len(self.repository.list_alerts(active_only=True)),
             last_refresh_at=self._last_refresh_at,
         )
+
+    def get_ai_status(self) -> AiStatusResponse:
+        status = self.alert_service.gemini_service.status()
+        unique_alerts: dict[str, Any] = {}
+        for alert in [*self._active_alerts, *self._alert_events[:50]]:
+            unique_alerts[alert.alert_id] = alert
+        status["eligible_alerts"] = sum(
+            1
+            for alert in unique_alerts.values()
+            if self.alert_service._supports_llm_enrichment(alert)
+        )
+        status["alerts_with_ai"] = sum(
+            1 for alert in unique_alerts.values() if alert.llm_insight is not None
+        )
+        return AiStatusResponse.model_validate(status)
+
+    def force_ai_refresh(self) -> AiStatusResponse:
+        self.refresh(force=True)
+        return self.get_ai_status()
 
     def get_recent_alerts(
         self,

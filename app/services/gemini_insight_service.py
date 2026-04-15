@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -28,9 +29,32 @@ class GeminiInsightService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.logger = get_logger(__name__)
+        self.attempts = 0
+        self.successes = 0
+        self.failures = 0
+        self.last_attempt_at: datetime | None = None
+        self.last_success_at: datetime | None = None
+        self.last_error: str | None = None
+        self.last_signal: str | None = None
+        self.last_layer: str | None = None
 
     def enabled(self) -> bool:
         return bool(self.settings.gemini_enabled and self.settings.gemini_api_key)
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled(),
+            "has_api_key": bool(self.settings.gemini_api_key),
+            "model": self.settings.gemini_model,
+            "attempts": self.attempts,
+            "successes": self.successes,
+            "failures": self.failures,
+            "last_attempt_at": self.last_attempt_at,
+            "last_success_at": self.last_success_at,
+            "last_error": self.last_error,
+            "last_signal": self.last_signal,
+            "last_layer": self.last_layer,
+        }
 
     def generate_predictive_insight(
         self,
@@ -68,6 +92,12 @@ class GeminiInsightService:
         if not self.enabled():
             return None
 
+        self.attempts += 1
+        self.last_attempt_at = datetime.now(timezone.utc)
+        self.last_signal = signal
+        self.last_layer = layer
+        self.last_error = None
+
         try:
             payload = self._call_gemini(
                 layer=layer,
@@ -80,11 +110,16 @@ class GeminiInsightService:
                 predictive_diagnosis=predictive_diagnosis,
             )
         except Exception as exc:  # pragma: no cover - falha externa
+            self.failures += 1
+            self.last_error = str(exc)
             self.logger.warning(
                 "gemini_alert_insight_failed",
                 extra={"signal": signal, "layer": layer, "error": str(exc)},
             )
             return None
+
+        self.successes += 1
+        self.last_success_at = datetime.now(timezone.utc)
 
         return LlmInsight(
             provider="gemini",

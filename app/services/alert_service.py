@@ -20,6 +20,7 @@ from app.domain.mappings import (
 from app.domain.schemas import AlertRecord, DataQualityIssue, SubsystemRiskScore
 from app.services.gemini_insight_service import GeminiInsightService
 from app.services.prescriptive_service import PrescriptiveService
+from app.utils.logger import get_logger
 
 
 class AlertService:
@@ -38,6 +39,7 @@ class AlertService:
         self.rules = self._load_rules()
         self.prescriptive_service = PrescriptiveService(settings=self.settings)
         self.gemini_service = GeminiInsightService(settings=self.settings)
+        self.logger = get_logger(__name__)
 
     def _load_rules(self) -> dict[str, Any]:
         with self.rules_path.open("r", encoding="utf-8") as file_obj:
@@ -552,7 +554,17 @@ class AlertService:
         *,
         max_count: int = 8,
     ) -> None:
-        if not alerts or feature_frame.empty or not self.gemini_service.enabled():
+        if not alerts or feature_frame.empty:
+            return
+        if not self.gemini_service.enabled():
+            self.logger.info(
+                "gemini_enrichment_skipped",
+                extra={
+                    "reason": "disabled_or_missing_key",
+                    "gemini_enabled": self.settings.gemini_enabled,
+                    "has_api_key": bool(self.settings.gemini_api_key),
+                },
+            )
             return
 
         ordered_candidates: list[AlertRecord] = []
@@ -574,6 +586,10 @@ class AlertService:
                 break
 
         if not ordered_candidates:
+            self.logger.info(
+                "gemini_enrichment_skipped",
+                extra={"reason": "no_supported_alert_candidates", "alert_count": len(alerts)},
+            )
             return
 
         ordered_frame = feature_frame.copy()
@@ -600,6 +616,15 @@ class AlertService:
                     None if alert.predictive_diagnosis is None else alert.predictive_diagnosis.model_dump()
                 ),
             )
+            if alert.llm_insight is not None:
+                self.logger.info(
+                    "gemini_alert_insight_attached",
+                    extra={
+                        "signal": alert.signal,
+                        "layer": alert.layer,
+                        "rule_id": alert.rule_id,
+                    },
+                )
 
     @staticmethod
     def _normalize_value(value: Any) -> Any:

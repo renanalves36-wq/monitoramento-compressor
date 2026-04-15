@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.domain.schemas import (
+    AiStatusResponse,
     MultiSignalTrendResponse,
     ReadingsResponse,
     RiskScoresResponse,
@@ -42,6 +43,20 @@ def get_risk_scores(
     service: HealthService = Depends(get_health_service),
 ) -> RiskScoresResponse:
     return service.get_risk_scores()
+
+
+@router.get("/ai", response_model=AiStatusResponse)
+def get_ai_status(
+    service: HealthService = Depends(get_health_service),
+) -> AiStatusResponse:
+    return service.get_ai_status()
+
+
+@router.post("/ai/refresh", response_model=AiStatusResponse)
+def refresh_ai_insights(
+    service: HealthService = Depends(get_health_service),
+) -> AiStatusResponse:
+    return service.force_ai_refresh()
 
 
 @router.get("/catalog", response_model=SignalCatalogResponse)

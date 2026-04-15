@@ -217,3 +217,19 @@ class StatusResponse(BaseModel):
     recent_alert_events: int = 0
     active_alerts: int = 0
     last_refresh_at: datetime | None = None
+
+
+class AiStatusResponse(BaseModel):
+    enabled: bool
+    has_api_key: bool
+    model: str
+    eligible_alerts: int = 0
+    alerts_with_ai: int = 0
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_error: str | None = None
+    last_signal: str | None = None
+    last_layer: str | None = None
