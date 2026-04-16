@@ -66,6 +66,13 @@ class QnInfluenceAnalysisResponse(BaseModel):
     qn_esperada: float | None = None
     delta_q: float | None = None
     delta_q_percentual: float | None = None
+    qn_media_janela: float | None = None
+    qn_minima_janela: float | None = None
+    qn_maxima_janela: float | None = None
+    qn_inicio_janela: float | None = None
+    qn_fim_janela: float | None = None
+    qn_variacao_janela: float | None = None
+    qn_variacao_percentual_janela: float | None = None
     influencia_direta: list[InfluenceItem] = Field(default_factory=list)
     influencia_indireta: list[InfluenceItem] = Field(default_factory=list)
     qualidade_modelo_direto: ModelQuality

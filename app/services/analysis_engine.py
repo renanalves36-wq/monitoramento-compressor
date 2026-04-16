@@ -664,6 +664,7 @@ def _run_analysis(
     qn_current = _safe_float(None if latest is None else latest.get(TARGET_QN))
     qn_expected = _safe_float(None if latest is None else latest.get(EXPECTED_QN))
     delta_q = _safe_float(None if latest is None else latest.get(DELTA_Q))
+    qn_window = _build_qn_window_summary(analysis_frame)
     delta_q_pct = (
         None
         if qn_expected is None or qn_expected == 0 or delta_q is None
@@ -689,6 +690,13 @@ def _run_analysis(
         qn_esperada=None if qn_expected is None else round(qn_expected, 3),
         delta_q=None if delta_q is None else round(delta_q, 3),
         delta_q_percentual=delta_q_pct,
+        qn_media_janela=qn_window["mean"],
+        qn_minima_janela=qn_window["min"],
+        qn_maxima_janela=qn_window["max"],
+        qn_inicio_janela=qn_window["start"],
+        qn_fim_janela=qn_window["end"],
+        qn_variacao_janela=qn_window["variation"],
+        qn_variacao_percentual_janela=qn_window["variation_pct"],
         influencia_direta=direct_items,
         influencia_indireta=indirect_items,
         qualidade_modelo_direto=_model_quality(direct_model),
@@ -1022,6 +1030,49 @@ def _model_quality(model: LinearInfluenceModel) -> ModelQuality:
         features_removidas=model.removed_features,
         observacoes=model.observations,
     )
+
+
+def _build_qn_window_summary(frame: pd.DataFrame) -> dict[str, float | None]:
+    if frame.empty or TARGET_QN not in frame.columns:
+        return {
+            "mean": None,
+            "min": None,
+            "max": None,
+            "start": None,
+            "end": None,
+            "variation": None,
+            "variation_pct": None,
+        }
+
+    values = pd.to_numeric(frame[TARGET_QN], errors="coerce").dropna()
+    if values.empty:
+        return {
+            "mean": None,
+            "min": None,
+            "max": None,
+            "start": None,
+            "end": None,
+            "variation": None,
+            "variation_pct": None,
+        }
+
+    start_value = _safe_float(values.iloc[0])
+    end_value = _safe_float(values.iloc[-1])
+    variation = None if start_value is None or end_value is None else end_value - start_value
+    variation_pct = (
+        None
+        if start_value is None or start_value == 0 or variation is None
+        else (variation / start_value) * 100.0
+    )
+    return {
+        "mean": _round_optional(_safe_float(values.mean()), 3),
+        "min": _round_optional(_safe_float(values.min()), 3),
+        "max": _round_optional(_safe_float(values.max()), 3),
+        "start": _round_optional(start_value, 3),
+        "end": _round_optional(end_value, 3),
+        "variation": _round_optional(variation, 3),
+        "variation_pct": _round_optional(variation_pct, 3),
+    }
 
 
 def _classification(

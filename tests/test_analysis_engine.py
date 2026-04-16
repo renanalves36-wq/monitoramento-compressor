@@ -57,6 +57,21 @@ class AnalysisEngineTest(unittest.TestCase):
         self.assertGreater(payload.qualidade_modelo_direto.r2 or 0.0, 0.85)
         self.assertTrue(payload.influencia_direta)
 
+    def test_qn_window_summary_keeps_latest_and_window_statistics_separate(self) -> None:
+        frame = _base_frame(60)
+        frame["qn_m3h"] = np.linspace(10000.0, 11200.0, len(frame))
+
+        payload = build_analysis_payload(frame, range_value=24, range_unit="hours")
+
+        self.assertEqual(payload.qn_atual, 11200.0)
+        self.assertEqual(payload.qn_fim_janela, 11200.0)
+        self.assertEqual(payload.qn_inicio_janela, 10000.0)
+        self.assertEqual(payload.qn_media_janela, 10600.0)
+        self.assertEqual(payload.qn_minima_janela, 10000.0)
+        self.assertEqual(payload.qn_maxima_janela, 11200.0)
+        self.assertEqual(payload.qn_variacao_janela, 1200.0)
+        self.assertEqual(payload.qn_variacao_percentual_janela, 12.0)
+
     def test_internal_degradation_dominance_when_vibration_and_oil_drive_residual_loss(self) -> None:
         frame = _base_frame()
         trend = np.linspace(0.0, 1.0, len(frame))

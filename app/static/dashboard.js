@@ -351,6 +351,39 @@ function influenceDirectionLabel(value) {
   return String(value || "") === "negativo" ? "reduz Qn" : "aumenta Qn";
 }
 
+function modelFitSummary(quality, unit = "Nm3/h") {
+  const r2 = Number(quality?.r2);
+  const error = quality?.erro_medio_abs;
+  if (!Number.isFinite(r2)) {
+    return "Sem pontos suficientes para medir a qualidade do ajuste.";
+  }
+
+  const fitLabel = r2 >= 0.75
+    ? "forte"
+    : r2 >= 0.45
+      ? "moderada"
+      : r2 >= 0.20
+        ? "baixa"
+        : "muito baixa";
+  return `Confianca do ajuste: ${fitLabel} (${formatNumber(r2 * 100, 0)}% explicado) | erro medio: ${formatMaybe(error, unit, 0)}`;
+}
+
+function lowConfidenceReason(analysis) {
+  const quality = safeArray(analysis?.qualidade_dados).filter((item) => item.severity !== "info");
+  const directR2 = Number(analysis?.qualidade_modelo_direto?.r2);
+  const lossR2 = Number(analysis?.qualidade_modelo_desvio?.r2);
+  const reasons = [];
+
+  if (Number.isFinite(directR2) && directR2 < 0.2) {
+    reasons.push("as variaveis de processo/controle explicaram pouco a Qn nesta janela");
+  }
+  if (Number.isFinite(lossR2) && lossR2 < 0.2) {
+    reasons.push("o desvio de performance ainda nao teve relacao forte com variaveis internas");
+  }
+  quality.slice(0, 2).forEach((item) => reasons.push(String(item.message || "").toLowerCase()));
+  return uniqueTexts(reasons).join("; ");
+}
+
 function countAlertsForSignal(signal, alerts) {
   return alerts.filter((alert) => alert.signal === signal).length;
 }
@@ -821,6 +854,10 @@ function renderAnalysisPanel() {
   const qualityItems = safeArray(analysis.qualidade_dados)
     .filter((item) => item.severity !== "info")
     .slice(0, 3);
+  const recommendation = classification.recomendacao_analitica || "Sem recomendacao analitica disponivel para esta janela.";
+  const confidenceReason = classification.classificacao === "baixa_confianca"
+    ? lowConfidenceReason(analysis)
+    : "";
 
   const buildInfluenceRows = (items, mode) => {
     if (!items.length) {
@@ -834,7 +871,7 @@ function renderAnalysisPanel() {
         </div>
         <div class="influence-score">
           <b>${formatNumber((item.influencia || 0) * 100, 0)}%</b>
-          <small>${escapeHtml(item.sinal === "negativo" ? "efeito negativo" : "efeito positivo")}</small>
+          <small>${escapeHtml(item.interpretacao_curta || influenceDirectionLabel(item.sinal))}</small>
         </div>
       </div>
     `).join("");
@@ -848,18 +885,38 @@ function renderAnalysisPanel() {
         <div><span>Desvio</span><strong>${formatMaybe(analysis.delta_q, "Nm3/h", 0)}</strong></div>
         <div><span>Desvio %</span><strong>${formatMaybe(analysis.delta_q_percentual, "%", 1)}</strong></div>
       </div>
+      <div class="analysis-window-card">
+        <span>Resumo da janela selecionada</span>
+        <div class="analysis-window-grid">
+          <div><small>Media</small><strong>${formatMaybe(analysis.qn_media_janela, "Nm3/h", 0)}</strong></div>
+          <div><small>Inicio</small><strong>${formatMaybe(analysis.qn_inicio_janela, "Nm3/h", 0)}</strong></div>
+          <div><small>Fim</small><strong>${formatMaybe(analysis.qn_fim_janela, "Nm3/h", 0)}</strong></div>
+          <div><small>Variacao</small><strong>${formatMaybe(analysis.qn_variacao_janela, "Nm3/h", 0)} (${formatMaybe(analysis.qn_variacao_percentual_janela, "%", 1)})</strong></div>
+          <div><small>Minimo</small><strong>${formatMaybe(analysis.qn_minima_janela, "Nm3/h", 0)}</strong></div>
+          <div><small>Maximo</small><strong>${formatMaybe(analysis.qn_maxima_janela, "Nm3/h", 0)}</strong></div>
+        </div>
+      </div>
       <p>${escapeHtml(analysis.resumo_textual || classification.explicacao_curta || "--")}</p>
-      <div class="stack-footer">${escapeHtml(classification.recomendacao_analitica || "")}</div>
+      ${confidenceReason ? `
+        <div class="analysis-reason-card">
+          <span>Por que baixa confianca</span>
+          <strong>${escapeHtml(confidenceReason)}</strong>
+        </div>
+      ` : ""}
+      <div class="analysis-recommendation-card">
+        <span>Recomendacao analitica</span>
+        <strong>${escapeHtml(recommendation)}</strong>
+      </div>
     </div>
     <div class="analysis-column">
       <div class="stack-title">Influencia direta na Qn</div>
       ${buildInfluenceRows(directItems, "processo/controle")}
-      <div class="stack-footer">Ajuste: R2 ${formatNumber(analysis.qualidade_modelo_direto?.r2)} | erro medio ${formatMaybe(analysis.qualidade_modelo_direto?.erro_medio_abs, "Nm3/h", 0)}</div>
+      <div class="stack-footer">${modelFitSummary(analysis.qualidade_modelo_direto)}</div>
     </div>
     <div class="analysis-column">
       <div class="stack-title">Influencia no desvio de performance</div>
       ${buildInfluenceRows(indirectItems, "degradacao")}
-      <div class="stack-footer">Ajuste: R2 ${formatNumber(analysis.qualidade_modelo_desvio?.r2)} | erro medio ${formatMaybe(analysis.qualidade_modelo_desvio?.erro_medio_abs, "Nm3/h", 0)}</div>
+      <div class="stack-footer">${modelFitSummary(analysis.qualidade_modelo_desvio)}</div>
     </div>
     <div class="analysis-column">
       <div class="stack-title">Qualidade da analise</div>
