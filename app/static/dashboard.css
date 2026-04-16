@@ -86,6 +86,7 @@ body::before {
 .score-panel,
 .trend-panel,
 .context-panel,
+.analysis-panel,
 .active-alerts-panel,
 .recent-alerts-panel,
 .explorer-panel {
@@ -435,6 +436,10 @@ select option {
   grid-column: span 4;
 }
 
+.analysis-panel {
+  grid-column: span 12;
+}
+
 .active-alerts-panel,
 .recent-alerts-panel,
 .explorer-panel {
@@ -551,6 +556,76 @@ select option {
 .context-grid,
 .trend-summary-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analysis-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 1fr 0.9fr;
+  gap: 10px;
+}
+
+.analysis-summary-card,
+.analysis-column {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.analysis-summary-card p {
+  margin: 10px 0;
+  color: #dfe6ef;
+  line-height: 1.42;
+}
+
+.analysis-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.analysis-metrics div {
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.analysis-metrics span,
+.influence-row span,
+.influence-score small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.analysis-metrics strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--heading);
+}
+
+.influence-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.influence-row strong {
+  color: var(--heading);
+}
+
+.influence-score {
+  min-width: 70px;
+  text-align: right;
+}
+
+.influence-score b {
+  color: var(--yellow);
 }
 
 .status-chip,
@@ -1029,10 +1104,15 @@ select option {
   .score-panel,
   .trend-panel,
   .context-panel,
+  .analysis-panel,
   .active-alerts-panel,
   .recent-alerts-panel,
   .explorer-panel {
     grid-column: span 12;
+  }
+
+  .analysis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1050,6 +1130,7 @@ select option {
   .status-strip,
   .kpi-grid,
   .context-grid,
+  .analysis-grid,
   .trend-summary-grid {
     grid-template-columns: 1fr;
   }

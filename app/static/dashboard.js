@@ -51,6 +51,7 @@ const state = {
   status: null,
   snapshot: null,
   aiStatus: null,
+  qnAnalysis: null,
   scores: [],
   activeAlerts: [],
   recentAlerts: [],
@@ -333,6 +334,21 @@ function featureLabel(feature) {
     ewma_gap_abs: "distancia do comportamento recente",
   };
   return map[String(feature || "").toLowerCase()] || String(feature || "--");
+}
+
+function analysisClassLabel(value) {
+  const map = {
+    dominancia_processo_rede: "processo / rede",
+    dominancia_controle: "controle",
+    dominancia_degradacao_interna: "degradacao interna",
+    dominancia_mista: "origem mista",
+    baixa_confianca: "baixa confianca",
+  };
+  return map[String(value || "").toLowerCase()] || String(value || "--");
+}
+
+function influenceDirectionLabel(value) {
+  return String(value || "") === "negativo" ? "reduz Qn" : "aumenta Qn";
 }
 
 function countAlertsForSignal(signal, alerts) {
@@ -784,6 +800,75 @@ function renderQualityPanel() {
         </div>
       `).join("")
     : '<div class="empty-state">Nenhuma observacao de qualidade foi apontada na ultima amostra.</div>';
+}
+
+function renderAnalysisPanel() {
+  const analysis = state.qnAnalysis;
+  const container = document.getElementById("analysis-grid");
+  const classBadge = document.getElementById("analysis-classification");
+  if (!container || !classBadge) return;
+
+  if (!analysis) {
+    classBadge.textContent = "Aguardando analise.";
+    container.innerHTML = '<div class="empty-state">Analise de influencia da Qn ainda nao carregada.</div>';
+    return;
+  }
+
+  const classification = analysis.classificacao_origem || {};
+  classBadge.textContent = `${analysisClassLabel(classification.classificacao)} | confianca ${formatNumber((classification.confianca || 0) * 100, 0)}%`;
+  const directItems = safeArray(analysis.influencia_direta).slice(0, 4);
+  const indirectItems = safeArray(analysis.influencia_indireta).slice(0, 4);
+  const qualityItems = safeArray(analysis.qualidade_dados)
+    .filter((item) => item.severity !== "info")
+    .slice(0, 3);
+
+  const buildInfluenceRows = (items, mode) => {
+    if (!items.length) {
+      return '<div class="stack-meta">Sem influencia estatistica relevante nesta janela.</div>';
+    }
+    return items.map((item) => `
+      <div class="influence-row">
+        <div>
+          <strong>${escapeHtml(item.label)}</strong>
+          <span>${escapeHtml(item.variavel)} | ${mode}</span>
+        </div>
+        <div class="influence-score">
+          <b>${formatNumber((item.influencia || 0) * 100, 0)}%</b>
+          <small>${escapeHtml(item.sinal === "negativo" ? "efeito negativo" : "efeito positivo")}</small>
+        </div>
+      </div>
+    `).join("");
+  };
+
+  container.innerHTML = `
+    <div class="analysis-summary-card">
+      <div class="analysis-metrics">
+        <div><span>Qn real</span><strong>${formatMaybe(analysis.qn_atual, "Nm3/h", 0)}</strong></div>
+        <div><span>Qn esperada</span><strong>${formatMaybe(analysis.qn_esperada, "Nm3/h", 0)}</strong></div>
+        <div><span>Desvio</span><strong>${formatMaybe(analysis.delta_q, "Nm3/h", 0)}</strong></div>
+        <div><span>Desvio %</span><strong>${formatMaybe(analysis.delta_q_percentual, "%", 1)}</strong></div>
+      </div>
+      <p>${escapeHtml(analysis.resumo_textual || classification.explicacao_curta || "--")}</p>
+      <div class="stack-footer">${escapeHtml(classification.recomendacao_analitica || "")}</div>
+    </div>
+    <div class="analysis-column">
+      <div class="stack-title">Influencia direta na Qn</div>
+      ${buildInfluenceRows(directItems, "processo/controle")}
+      <div class="stack-footer">Ajuste: R2 ${formatNumber(analysis.qualidade_modelo_direto?.r2)} | erro medio ${formatMaybe(analysis.qualidade_modelo_direto?.erro_medio_abs, "Nm3/h", 0)}</div>
+    </div>
+    <div class="analysis-column">
+      <div class="stack-title">Influencia no desvio de performance</div>
+      ${buildInfluenceRows(indirectItems, "degradacao")}
+      <div class="stack-footer">Ajuste: R2 ${formatNumber(analysis.qualidade_modelo_desvio?.r2)} | erro medio ${formatMaybe(analysis.qualidade_modelo_desvio?.erro_medio_abs, "Nm3/h", 0)}</div>
+    </div>
+    <div class="analysis-column">
+      <div class="stack-title">Qualidade da analise</div>
+      ${qualityItems.length ? qualityItems.map((item) => `
+        <div class="stack-meta">- ${escapeHtml(item.message)}</div>
+      `).join("") : '<div class="stack-meta">Sem bloqueios relevantes de qualidade.</div>'}
+      <div class="stack-footer">Pontos validos: ${formatNumber(analysis.data_window?.valid_rows, 0)} | janela: ${analysis.range_value} ${analysis.range_unit}</div>
+    </div>
+  `;
 }
 
 function renderAlertList(containerId, alerts, emptyText, counterId) {
@@ -1431,6 +1516,7 @@ function bindDynamicEvents() {
       renderPresetButtons();
       bindDynamicEvents();
       setTrendLoading();
+      await loadAnalysis();
       await loadTrends();
     });
   });
@@ -1524,6 +1610,7 @@ function renderAll() {
   renderOperationalPanel();
   renderScorePanel();
   renderContextPanel();
+  renderAnalysisPanel();
   renderAlertPanels();
   renderSignalExplorer();
   renderQualityPanel();
@@ -1571,13 +1658,27 @@ async function loadTrends() {
   }
 }
 
+async function loadAnalysis() {
+  const params = new URLSearchParams({
+    range_value: String(state.rangeValue),
+    range_unit: state.rangeUnit,
+  });
+  state.qnAnalysis = await fetchJson(`/analysis/qn-influence/current?${params.toString()}`);
+  renderAnalysisPanel();
+}
+
 async function loadBaseData() {
-  const [catalogData, statusData, snapshotData, scoresData, aiData, activeData, recentData] = await Promise.all([
+  const analysisParams = new URLSearchParams({
+    range_value: String(state.rangeValue),
+    range_unit: state.rangeUnit,
+  });
+  const [catalogData, statusData, snapshotData, scoresData, aiData, analysisData, activeData, recentData] = await Promise.all([
     fetchJson("/status/catalog"),
     fetchJson("/status"),
     fetchJson("/status/current"),
     fetchJson("/status/scores"),
     fetchJson("/status/ai"),
+    fetchJson(`/analysis/qn-influence/current?${analysisParams.toString()}`),
     fetchJson("/alerts"),
     fetchJson(`/alerts/recent?limit=${RECENT_ALERT_FETCH_LIMIT}`),
   ]);
@@ -1586,6 +1687,7 @@ async function loadBaseData() {
   state.status = statusData;
   state.snapshot = snapshotData;
   state.aiStatus = aiData;
+  state.qnAnalysis = analysisData;
   state.scores = safeArray(scoresData.scores);
   state.activeAlerts = safeArray(activeData.alerts);
   state.recentAlerts = safeArray(recentData.alerts);
@@ -1647,6 +1749,7 @@ function attachEvents() {
     renderPresetButtons();
     bindDynamicEvents();
     setTrendLoading();
+    await loadAnalysis();
     await loadTrends();
   });
 
@@ -1655,6 +1758,7 @@ function attachEvents() {
     renderPresetButtons();
     bindDynamicEvents();
     setTrendLoading();
+    await loadAnalysis();
     await loadTrends();
   });
 

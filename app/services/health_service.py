@@ -10,6 +10,11 @@ import numpy as np
 import pandas as pd
 
 from app.config import Settings
+from app.domain.analysis_schemas import (
+    LossOriginClassification,
+    QnInfluenceAnalysisResponse,
+    QnInfluenceHistoryResponse,
+)
 from app.domain.mappings import (
     DEFAULT_SIGNAL_BY_SUBSYSTEM,
     DERIVED_SIGNALS,
@@ -36,6 +41,7 @@ from app.domain.schemas import (
     AiStatusResponse,
 )
 from app.services.alert_service import AlertService
+from app.services.analysis_engine import AnalysisEngine
 from app.services.feature_service import FeatureService
 from app.services.flow_service import (
     calculate_current_to_normal_factor,
@@ -61,6 +67,7 @@ class HealthService:
         self.feature_service = FeatureService()
         self.alert_service = AlertService(settings.alert_rules_path, settings=settings)
         self.predictive_service = PredictiveService(settings)
+        self.analysis_engine = AnalysisEngine()
         self.logger = get_logger(__name__)
 
         self._history_frame = pd.DataFrame()
@@ -205,6 +212,50 @@ class HealthService:
         if self._feature_frame.empty:
             return self._build_flow_estimate(None)
         return self._build_flow_estimate(self._feature_frame.iloc[-1])
+
+    def get_qn_influence_current(
+        self,
+        range_value: int = 24,
+        range_unit: str = "hours",
+    ) -> QnInfluenceAnalysisResponse:
+        self._ensure_feature_frame_loaded()
+        base_frame = self._slice_base_frame(
+            range_value=range_value,
+            range_unit=range_unit,
+        )
+        return self.analysis_engine.build_analysis_payload(
+            base_frame,
+            range_value=range_value,
+            range_unit=range_unit,
+        )
+
+    def get_qn_influence_history(
+        self,
+        range_value: int = 24,
+        range_unit: str = "hours",
+        max_points: int = 240,
+    ) -> QnInfluenceHistoryResponse:
+        self._ensure_feature_frame_loaded()
+        base_frame = self._slice_base_frame(
+            range_value=range_value,
+            range_unit=range_unit,
+        )
+        return self.analysis_engine.build_history_payload(
+            base_frame,
+            range_value=range_value,
+            range_unit=range_unit,
+            max_points=max_points,
+        )
+
+    def get_qn_loss_origin_current(
+        self,
+        range_value: int = 24,
+        range_unit: str = "hours",
+    ) -> LossOriginClassification:
+        return self.get_qn_influence_current(
+            range_value=range_value,
+            range_unit=range_unit,
+        ).classificacao_origem
 
     def get_latest_readings(self, limit: int) -> ReadingsResponse:
         self.refresh()

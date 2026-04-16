@@ -10,7 +10,7 @@ DASHBOARD_HTML = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel TA6000</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260415-flow-1" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260416-analysis-1" />
 </head>
 <body>
   <main class="shell">
@@ -175,6 +175,17 @@ DASHBOARD_HTML = """
         </div>
       </section>
 
+      <section class="panel analysis-panel">
+        <div class="panel-heading compact-heading">
+          <div>
+            <p class="eyebrow">Performance</p>
+            <h2>Influencia na vazao Qn</h2>
+          </div>
+          <div class="panel-note" id="analysis-classification">Aguardando analise.</div>
+        </div>
+        <div class="analysis-grid" id="analysis-grid"></div>
+      </section>
+
       <section class="panel active-alerts-panel">
         <div class="panel-heading compact-heading">
           <div>
@@ -210,7 +221,7 @@ DASHBOARD_HTML = """
     </section>
   </main>
 
-  <script src="/static/dashboard.js?v=20260415-flow-1" defer></script>
+  <script src="/static/dashboard.js?v=20260416-analysis-1" defer></script>
 </body>
 </html>
 """

@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.routes_analysis import router as analysis_router
 from app.api.routes_alerts import router as alerts_router
 from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_status import router as status_router
@@ -52,4 +53,5 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 app.include_router(status_router)
 app.include_router(alerts_router)
+app.include_router(analysis_router)
 app.include_router(dashboard_router)
