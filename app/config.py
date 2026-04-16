@@ -80,6 +80,30 @@ class Settings(BaseModel):
     predictive_min_regression_r2: float = Field(
         default=float(os.getenv("PREDICTIVE_MIN_REGRESSION_R2", "0.55"))
     )
+    flow_suction_temperature_c: float = Field(
+        default=float(os.getenv("FLOW_SUCTION_TEMPERATURE_C", "28"))
+    )
+    flow_suction_relative_humidity_pct: float = Field(
+        default=float(os.getenv("FLOW_SUCTION_RELATIVE_HUMIDITY_PCT", "90"))
+    )
+    flow_atmospheric_pressure_kpa: float = Field(
+        default=float(os.getenv("FLOW_ATMOSPHERIC_PRESSURE_KPA", "101.325"))
+    )
+    flow_saturation_vapor_pressure_kpa: float = Field(
+        default=float(os.getenv("FLOW_SATURATION_VAPOR_PRESSURE_KPA", "3.7831"))
+    )
+    flow_current_to_normal_factor: float = Field(
+        default=float(os.getenv("FLOW_CURRENT_TO_NORMAL_FACTOR", "0.87658"))
+    )
+    flow_nominal_nm3h: float = Field(
+        default=float(os.getenv("FLOW_NOMINAL_NM3H", "12000"))
+    )
+    flow_nominal_current_a: float = Field(
+        default=float(os.getenv("FLOW_NOMINAL_CURRENT_A", "180"))
+    )
+    flow_no_load_current_a: float = Field(
+        default=float(os.getenv("FLOW_NO_LOAD_CURRENT_A", "0"))
+    )
     gemini_enabled: bool = Field(
         default=os.getenv("GEMINI_ENABLED", "false").lower() == "true"
     )

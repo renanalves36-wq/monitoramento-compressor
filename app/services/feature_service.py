@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import linregress
 
-from app.domain.mappings import NUMERIC_SIGNALS
+from app.domain.mappings import DERIVED_SIGNALS, NUMERIC_SIGNALS
 
 
 class FeatureService:
@@ -26,7 +26,7 @@ class FeatureService:
         candidate_signals = [
             signal for signal in NUMERIC_SIGNALS if signal in features.columns
         ]
-        for extra_signal in ("delta_filtro_oleo_bar", "pv_vib_max_mils", "pv_temp_estator_max_c"):
+        for extra_signal in DERIVED_SIGNALS:
             if extra_signal in features.columns and extra_signal not in candidate_signals:
                 candidate_signals.append(extra_signal)
 

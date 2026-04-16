@@ -424,6 +424,21 @@ class IngestionService:
         if stator_columns:
             frame["pv_temp_estator_max_c"] = frame[stator_columns].max(axis=1)
 
+        if "pv_corr_motor_a" in frame.columns:
+            denominator = (
+                self.settings.flow_nominal_current_a
+                - self.settings.flow_no_load_current_a
+            )
+            if denominator > 0 and self.settings.flow_current_to_normal_factor > 0:
+                current = pd.to_numeric(frame["pv_corr_motor_a"], errors="coerce")
+                qn = self.settings.flow_nominal_nm3h * (
+                    (current - self.settings.flow_no_load_current_a) / denominator
+                )
+                frame["qn_m3h"] = qn.clip(lower=0)
+                frame["qa_m3h"] = (
+                    frame["qn_m3h"] / self.settings.flow_current_to_normal_factor
+                )
+
         return frame
 
     def _collect_null_issues(self, frame: pd.DataFrame) -> list[DataQualityIssue]:

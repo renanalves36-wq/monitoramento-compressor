@@ -100,6 +100,33 @@ class SubsystemRiskScore(BaseModel):
     rationale: list[str] = Field(default_factory=list)
 
 
+class FlowAmbientConditions(BaseModel):
+    suction_temperature_c: float
+    relative_humidity_pct: float
+    atmospheric_pressure_kpa: float
+    saturation_vapor_pressure_kpa: float
+    vapor_partial_pressure_kpa: float
+    dry_air_partial_pressure_kpa: float
+    current_to_normal_factor: float
+    calculated_current_to_normal_factor: float | None = None
+    normal_reference: str = "0 C, 1 atm e ar seco"
+
+
+class FlowEstimateResponse(BaseModel):
+    timestamp: datetime | None = None
+    current_a: float | None = None
+    no_load_current_a: float
+    nominal_current_a: float
+    nominal_flow_nm3h: float
+    qn_m3h: float | None = None
+    qa_m3h: float | None = None
+    qn_description: str = "Qn_m3h: vazao normalizada em Nm3/h"
+    qa_description: str = "Qa_m3h: vazao real na succao em m3/h"
+    formula_qn: str = "Qn_m3h = 12000 * ((I - I0) / (180 - I0))"
+    formula_qa: str = "Qa_m3h = Qn_m3h / F"
+    conditions: FlowAmbientConditions
+
+
 class SnapshotResponse(BaseModel):
     timestamp: datetime | None = None
     mode_key: str | None = None
@@ -107,6 +134,7 @@ class SnapshotResponse(BaseModel):
     st_carga_oper: str | None = None
     values: dict[str, Any] = Field(default_factory=dict)
     data_quality_issues: list[DataQualityIssue] = Field(default_factory=list)
+    flow_estimate: FlowEstimateResponse | None = None
 
 
 class ReadingsResponse(BaseModel):

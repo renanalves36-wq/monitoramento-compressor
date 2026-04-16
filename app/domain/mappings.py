@@ -43,6 +43,8 @@ SUBSYSTEM_SIGNALS = {
         "pv_pos_abert_valv_admissao_pct",
         "pv_pos_valv_bypass_pct",
         "pv_pos_alivio_pct",
+        "qn_m3h",
+        "qa_m3h",
     ],
     "lubrificacao": [
         "pv_pres_oleo_antes_filtro_bar",
@@ -86,7 +88,13 @@ NUMERIC_SIGNALS = sorted(
     }
 )
 
-DERIVED_SIGNALS = ["delta_filtro_oleo_bar", "pv_vib_max_mils", "pv_temp_estator_max_c"]
+DERIVED_SIGNALS = [
+    "delta_filtro_oleo_bar",
+    "pv_vib_max_mils",
+    "pv_temp_estator_max_c",
+    "qn_m3h",
+    "qa_m3h",
+]
 
 ZERO_ABNORMAL_SIGNALS = {
     "pv_temp_ar_estagio_3_c",
@@ -203,6 +211,14 @@ SIGNAL_METADATA = {
     },
     "pv_pos_valv_bypass_pct": {"label": "Posicao da valvula de bypass", "unit": "%"},
     "pv_pos_alivio_pct": {"label": "Posicao de alivio", "unit": "%"},
+    "qn_m3h": {
+        "label": "Qn - vazao normalizada",
+        "unit": "Nm3/h",
+    },
+    "qa_m3h": {
+        "label": "Qa - vazao real na succao",
+        "unit": "m3/h",
+    },
     "st_plc": {"label": "Status PLC", "unit": None},
     "st_oper": {"label": "Estado operacional", "unit": None},
     "pv_hor_operacao": {"label": "Horas de operacao", "unit": "h"},

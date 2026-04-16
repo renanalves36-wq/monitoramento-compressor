@@ -10,7 +10,7 @@ DASHBOARD_HTML = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel TA6000</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260415-ai-overview-1" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260415-flow-1" />
 </head>
 <body>
   <main class="shell">
@@ -117,6 +117,7 @@ DASHBOARD_HTML = """
         </div>
         <div class="status-strip" id="status-strip"></div>
         <div class="operational-guidance" id="operational-guidance"></div>
+        <div class="flow-conditions" id="flow-conditions"></div>
         <div class="kpi-grid" id="hero-kpis"></div>
       </section>
 
@@ -209,7 +210,7 @@ DASHBOARD_HTML = """
     </section>
   </main>
 
-  <script src="/static/dashboard.js?v=20260415-ai-overview-1" defer></script>
+  <script src="/static/dashboard.js?v=20260415-flow-1" defer></script>
 </body>
 </html>
 """

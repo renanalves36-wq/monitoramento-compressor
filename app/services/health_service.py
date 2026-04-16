@@ -20,6 +20,8 @@ from app.domain.mappings import (
 )
 from app.domain.schemas import (
     AlertsResponse,
+    FlowAmbientConditions,
+    FlowEstimateResponse,
     MultiSignalTrendResponse,
     ReadingsResponse,
     RiskScoresResponse,
@@ -35,6 +37,13 @@ from app.domain.schemas import (
 )
 from app.services.alert_service import AlertService
 from app.services.feature_service import FeatureService
+from app.services.flow_service import (
+    calculate_current_to_normal_factor,
+    calculate_dry_air_partial_pressure_kpa,
+    calculate_qa_m3h,
+    calculate_qn_m3h,
+    calculate_vapor_partial_pressure_kpa,
+)
 from app.services.ingestion_service import IngestionBatch, IngestionService
 from app.services.predictive_service import PredictiveService
 from app.storage.alert_repository import AlertRepository
@@ -188,7 +197,14 @@ class HealthService:
             else str(latest.get("st_carga_oper")),
             values=self._serialize_row(latest, include_features=False),
             data_quality_issues=relevant_issues,
+            flow_estimate=self._build_flow_estimate(latest),
         )
+
+    def get_flow_estimate(self) -> FlowEstimateResponse:
+        self.refresh()
+        if self._feature_frame.empty:
+            return self._build_flow_estimate(None)
+        return self._build_flow_estimate(self._feature_frame.iloc[-1])
 
     def get_latest_readings(self, limit: int) -> ReadingsResponse:
         self.refresh()
@@ -485,6 +501,70 @@ class HealthService:
     def force_ai_refresh(self) -> AiStatusResponse:
         self.refresh(force=True)
         return self.get_ai_status()
+
+    def _build_flow_estimate(self, latest: pd.Series | None) -> FlowEstimateResponse:
+        conditions = self._build_flow_conditions()
+        timestamp = None
+        current_a = None
+        qn_m3h = None
+        qa_m3h = None
+
+        if latest is not None:
+            timestamp_value = latest.get("timestamp")
+            if timestamp_value is not None and not pd.isna(timestamp_value):
+                timestamp = pd.to_datetime(timestamp_value).to_pydatetime()
+            current_a = self._safe_float(latest.get("pv_corr_motor_a"))
+            qn_m3h = self._safe_float(latest.get("qn_m3h"))
+            qa_m3h = self._safe_float(latest.get("qa_m3h"))
+
+        if qn_m3h is None:
+            qn_m3h = calculate_qn_m3h(
+                current_a=current_a,
+                no_load_current_a=self.settings.flow_no_load_current_a,
+                nominal_current_a=self.settings.flow_nominal_current_a,
+                nominal_flow_nm3h=self.settings.flow_nominal_nm3h,
+            )
+        if qa_m3h is None:
+            qa_m3h = calculate_qa_m3h(
+                qn_m3h=qn_m3h,
+                current_to_normal_factor=conditions.current_to_normal_factor,
+            )
+
+        return FlowEstimateResponse(
+            timestamp=timestamp,
+            current_a=current_a,
+            no_load_current_a=self.settings.flow_no_load_current_a,
+            nominal_current_a=self.settings.flow_nominal_current_a,
+            nominal_flow_nm3h=self.settings.flow_nominal_nm3h,
+            qn_m3h=qn_m3h,
+            qa_m3h=qa_m3h,
+            conditions=conditions,
+        )
+
+    def _build_flow_conditions(self) -> FlowAmbientConditions:
+        vapor_pressure = calculate_vapor_partial_pressure_kpa(
+            relative_humidity_pct=self.settings.flow_suction_relative_humidity_pct,
+            saturation_vapor_pressure_kpa=self.settings.flow_saturation_vapor_pressure_kpa,
+        )
+        dry_air_pressure = calculate_dry_air_partial_pressure_kpa(
+            atmospheric_pressure_kpa=self.settings.flow_atmospheric_pressure_kpa,
+            vapor_partial_pressure_kpa=vapor_pressure,
+        )
+        _calculated_factor = calculate_current_to_normal_factor(
+            dry_air_partial_pressure_kpa=dry_air_pressure,
+            atmospheric_pressure_kpa=self.settings.flow_atmospheric_pressure_kpa,
+            suction_temperature_c=self.settings.flow_suction_temperature_c,
+        )
+        return FlowAmbientConditions(
+            suction_temperature_c=self.settings.flow_suction_temperature_c,
+            relative_humidity_pct=self.settings.flow_suction_relative_humidity_pct,
+            atmospheric_pressure_kpa=self.settings.flow_atmospheric_pressure_kpa,
+            saturation_vapor_pressure_kpa=self.settings.flow_saturation_vapor_pressure_kpa,
+            vapor_partial_pressure_kpa=vapor_pressure,
+            dry_air_partial_pressure_kpa=dry_air_pressure,
+            current_to_normal_factor=self.settings.flow_current_to_normal_factor,
+            calculated_current_to_normal_factor=_calculated_factor,
+        )
 
     def get_recent_alerts(
         self,

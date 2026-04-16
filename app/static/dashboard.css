@@ -458,6 +458,34 @@ select option {
   margin-bottom: 10px;
 }
 
+.flow-conditions {
+  margin-bottom: 10px;
+}
+
+.flow-conditions-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(120, 165, 255, 0.16);
+  border-radius: var(--radius-md);
+  background: rgba(120, 165, 255, 0.045);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.flow-conditions-card strong {
+  color: var(--heading);
+  margin-right: 4px;
+}
+
+.flow-conditions-card span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
 .guidance-card {
   display: flex;
   justify-content: space-between;

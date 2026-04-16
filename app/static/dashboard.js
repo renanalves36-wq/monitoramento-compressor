@@ -34,10 +34,12 @@ const QUICK_PRESETS = [
 ];
 
 const OVERVIEW_SIGNALS = [
+  "qn_m3h",
+  "qa_m3h",
   "pv_pres_sistema_bar",
-  "pv_temp_oleo_lubrificacao_c",
-  "pv_vib_max_mils",
   "pv_corr_motor_a",
+  "pv_vib_max_mils",
+  "pv_temp_oleo_lubrificacao_c",
 ];
 
 const CHART_COLORS = ["#39c7c2", "#f0c75a", "#6fa3ff", "#f29a56", "#79d08e", "#f16d6d"];
@@ -343,9 +345,24 @@ function getPreferredSignals() {
     const overview = OVERVIEW_SIGNALS
       .map((signal) => visible.find((item) => item.signal === signal))
       .filter(Boolean);
-    if (overview.length) return overview.slice(0, 4);
+    if (overview.length) return overview.slice(0, 6);
   }
   return visible.slice(0, 4);
+}
+
+function renderFlowConditions(flowEstimate) {
+  const conditions = flowEstimate?.conditions;
+  if (!conditions) return "";
+  return `
+    <div class="flow-conditions-card">
+      <strong>Base do calculo de vazao</strong>
+      <span>Qn: vazao normalizada em Nm3/h</span>
+      <span>Qa: vazao real na succao em m3/h</span>
+      <span>Succao: ${formatNumber(conditions.suction_temperature_c, 0)} C | UR ${formatNumber(conditions.relative_humidity_pct, 0)}% | Patm ${formatNumber(conditions.atmospheric_pressure_kpa, 3)} kPa</span>
+      <span>Pv ${formatNumber(conditions.vapor_partial_pressure_kpa, 5)} kPa | Pdry ${formatNumber(conditions.dry_air_partial_pressure_kpa, 5)} kPa | F ${formatNumber(conditions.current_to_normal_factor, 5)}</span>
+      <span>Referencia Nm3: ${conditions.normal_reference || "0 C, 1 atm e ar seco"} | I0 ${formatMaybe(flowEstimate.no_load_current_a, "A")}</span>
+    </div>
+  `;
 }
 
 function alertMatchesFilters(alert) {
@@ -570,6 +587,7 @@ function renderOperationalPanel() {
       <span class="guidance-focus">${escapeHtml(guidance.focus)}</span>
     </div>
   `;
+  document.getElementById("flow-conditions").innerHTML = renderFlowConditions(snapshot.flow_estimate);
 
   const heroSignals = getPreferredSignals();
   const activeAlerts = getFilteredActiveAlerts();

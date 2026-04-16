@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.domain.schemas import (
     AiStatusResponse,
+    FlowEstimateResponse,
     MultiSignalTrendResponse,
     ReadingsResponse,
     RiskScoresResponse,
@@ -28,6 +29,13 @@ def get_current_status(
     service: HealthService = Depends(get_health_service),
 ) -> SnapshotResponse:
     return service.get_latest_snapshot()
+
+
+@router.get("/flow", response_model=FlowEstimateResponse)
+def get_flow_estimate(
+    service: HealthService = Depends(get_health_service),
+) -> FlowEstimateResponse:
+    return service.get_flow_estimate()
 
 
 @router.get("/readings", response_model=ReadingsResponse)
