@@ -119,10 +119,20 @@ class FlowEstimateResponse(BaseModel):
     nominal_current_a: float
     nominal_flow_nm3h: float
     qn_m3h: float | None = None
+    q_perda_m3h: float | None = None
+    q_utilizacao_pct: float | None = None
     qa_m3h: float | None = None
-    qn_description: str = "Qn_m3h: vazao normalizada em Nm3/h"
-    qa_description: str = "Qa_m3h: vazao real na succao em m3/h"
-    formula_qn: str = "Qn_m3h = 12000 * ((I - I0) / (180 - I0))"
+    qn_description: str = (
+        "Qn_m3h: vazao efetiva estimada em Nm3/h, limitada pela vazao nominal"
+    )
+    q_perda_description: str = "q_perda_m3h: perda estimada frente aos 12000 Nm3/h nominais"
+    q_utilizacao_description: str = "q_utilizacao_pct: percentual de uso da capacidade nominal"
+    qa_description: str = (
+        "Qa_m3h: volume equivalente na succao em m3/h; nao representa limite de capacidade util"
+    )
+    formula_qn: str = "Qn_m3h = min(12000, max(0, 12000 * ((I - I0) / (180 - I0))))"
+    formula_q_perda: str = "q_perda_m3h = 12000 - Qn_m3h"
+    formula_q_utilizacao: str = "q_utilizacao_pct = Qn_m3h / 12000 * 100"
     formula_qa: str = "Qa_m3h = Qn_m3h / F"
     conditions: FlowAmbientConditions
 

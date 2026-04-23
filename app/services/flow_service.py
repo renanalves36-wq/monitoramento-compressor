@@ -54,7 +54,7 @@ def calculate_qn_m3h(
         raise ValueError("A corrente nominal deve ser maior que a corrente sem carga.")
 
     qn_m3h = nominal_flow_nm3h * ((current_a - no_load_current_a) / denominator)
-    return max(0.0, qn_m3h)
+    return min(nominal_flow_nm3h, max(0.0, qn_m3h))
 
 
 def calculate_qa_m3h(
@@ -62,10 +62,44 @@ def calculate_qa_m3h(
     qn_m3h: float | None,
     current_to_normal_factor: float,
 ) -> float | None:
-    """Converte vazao normalizada para vazao real na succao."""
+    """Converte Qn para volume equivalente na succao.
+
+    Essa grandeza pode ser maior que a vazao nominal normalizada por efeito de
+    temperatura/umidade. Ela nao deve ser usada como limite de capacidade util.
+    """
 
     if qn_m3h is None:
         return None
     if current_to_normal_factor <= 0:
         raise ValueError("O fator de conversao de vazao deve ser maior que zero.")
     return qn_m3h / current_to_normal_factor
+
+
+def calculate_flow_loss_m3h(
+    *,
+    qn_m3h: float | None,
+    nominal_flow_nm3h: float,
+) -> float | None:
+    """Calcula perda estimada de capacidade frente a vazao nominal."""
+
+    if qn_m3h is None:
+        return None
+    if nominal_flow_nm3h <= 0:
+        raise ValueError("A vazao nominal deve ser maior que zero.")
+    effective_qn = min(nominal_flow_nm3h, max(0.0, qn_m3h))
+    return max(0.0, nominal_flow_nm3h - effective_qn)
+
+
+def calculate_flow_utilization_pct(
+    *,
+    qn_m3h: float | None,
+    nominal_flow_nm3h: float,
+) -> float | None:
+    """Calcula utilizacao da capacidade nominal em percentual."""
+
+    if qn_m3h is None:
+        return None
+    if nominal_flow_nm3h <= 0:
+        raise ValueError("A vazao nominal deve ser maior que zero.")
+    effective_qn = min(nominal_flow_nm3h, max(0.0, qn_m3h))
+    return (effective_qn / nominal_flow_nm3h) * 100.0

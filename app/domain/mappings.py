@@ -44,6 +44,8 @@ SUBSYSTEM_SIGNALS = {
         "pv_pos_valv_bypass_pct",
         "pv_pos_alivio_pct",
         "qn_m3h",
+        "q_perda_m3h",
+        "q_utilizacao_pct",
         "qa_m3h",
     ],
     "lubrificacao": [
@@ -93,6 +95,8 @@ DERIVED_SIGNALS = [
     "pv_vib_max_mils",
     "pv_temp_estator_max_c",
     "qn_m3h",
+    "q_perda_m3h",
+    "q_utilizacao_pct",
     "qa_m3h",
 ]
 
@@ -212,11 +216,19 @@ SIGNAL_METADATA = {
     "pv_pos_valv_bypass_pct": {"label": "Posicao da valvula de bypass", "unit": "%"},
     "pv_pos_alivio_pct": {"label": "Posicao de alivio", "unit": "%"},
     "qn_m3h": {
-        "label": "Qn - vazao normalizada",
+        "label": "Qn - vazao efetiva estimada",
         "unit": "Nm3/h",
     },
+    "q_perda_m3h": {
+        "label": "Perda estimada de vazao",
+        "unit": "Nm3/h",
+    },
+    "q_utilizacao_pct": {
+        "label": "Utilizacao da capacidade",
+        "unit": "%",
+    },
     "qa_m3h": {
-        "label": "Qa - vazao real na succao",
+        "label": "Qa - volume equivalente na succao",
         "unit": "m3/h",
     },
     "st_plc": {"label": "Status PLC", "unit": None},

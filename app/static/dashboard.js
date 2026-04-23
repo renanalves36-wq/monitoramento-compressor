@@ -35,7 +35,8 @@ const QUICK_PRESETS = [
 
 const OVERVIEW_SIGNALS = [
   "qn_m3h",
-  "qa_m3h",
+  "q_perda_m3h",
+  "q_utilizacao_pct",
   "pv_pres_sistema_bar",
   "pv_corr_motor_a",
   "pv_vib_max_mils",
@@ -405,8 +406,9 @@ function renderFlowConditions(flowEstimate) {
   return `
     <div class="flow-conditions-card">
       <strong>Base do calculo de vazao</strong>
-      <span>Qn: vazao normalizada em Nm3/h</span>
-      <span>Qa: vazao real na succao em m3/h</span>
+      <span>Qn: vazao efetiva estimada, limitada a ${formatMaybe(flowEstimate.nominal_flow_nm3h, "Nm3/h", 0)}</span>
+      <span>Perda: ${formatMaybe(flowEstimate.q_perda_m3h, "Nm3/h", 0)} | utilizacao ${formatMaybe(flowEstimate.q_utilizacao_pct, "%", 1)}</span>
+      <span>Qa: volume equivalente na succao, usado apenas para referencia ambiental</span>
       <span>Succao: ${formatNumber(conditions.suction_temperature_c, 0)} C | UR ${formatNumber(conditions.relative_humidity_pct, 0)}% | Patm ${formatNumber(conditions.atmospheric_pressure_kpa, 3)} kPa</span>
       <span>Pv ${formatNumber(conditions.vapor_partial_pressure_kpa, 5)} kPa | Pdry ${formatNumber(conditions.dry_air_partial_pressure_kpa, 5)} kPa | F ${formatNumber(conditions.current_to_normal_factor, 5)}</span>
       <span>Referencia Nm3: ${conditions.normal_reference || "0 C, 1 atm e ar seco"} | I0 ${formatMaybe(flowEstimate.no_load_current_a, "A")}</span>
@@ -880,7 +882,7 @@ function renderAnalysisPanel() {
   container.innerHTML = `
     <div class="analysis-summary-card">
       <div class="analysis-metrics">
-        <div><span>Qn real</span><strong>${formatMaybe(analysis.qn_atual, "Nm3/h", 0)}</strong></div>
+        <div><span>Qn efetiva</span><strong>${formatMaybe(analysis.qn_atual, "Nm3/h", 0)}</strong></div>
         <div><span>Qn esperada</span><strong>${formatMaybe(analysis.qn_esperada, "Nm3/h", 0)}</strong></div>
         <div><span>Desvio</span><strong>${formatMaybe(analysis.delta_q, "Nm3/h", 0)}</strong></div>
         <div><span>Desvio %</span><strong>${formatMaybe(analysis.delta_q_percentual, "%", 1)}</strong></div>

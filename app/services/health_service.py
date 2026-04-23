@@ -46,6 +46,8 @@ from app.services.feature_service import FeatureService
 from app.services.flow_service import (
     calculate_current_to_normal_factor,
     calculate_dry_air_partial_pressure_kpa,
+    calculate_flow_loss_m3h,
+    calculate_flow_utilization_pct,
     calculate_qa_m3h,
     calculate_qn_m3h,
     calculate_vapor_partial_pressure_kpa,
@@ -558,6 +560,8 @@ class HealthService:
         timestamp = None
         current_a = None
         qn_m3h = None
+        q_perda_m3h = None
+        q_utilizacao_pct = None
         qa_m3h = None
 
         if latest is not None:
@@ -566,6 +570,8 @@ class HealthService:
                 timestamp = pd.to_datetime(timestamp_value).to_pydatetime()
             current_a = self._safe_float(latest.get("pv_corr_motor_a"))
             qn_m3h = self._safe_float(latest.get("qn_m3h"))
+            q_perda_m3h = self._safe_float(latest.get("q_perda_m3h"))
+            q_utilizacao_pct = self._safe_float(latest.get("q_utilizacao_pct"))
             qa_m3h = self._safe_float(latest.get("qa_m3h"))
 
         if qn_m3h is None:
@@ -573,6 +579,16 @@ class HealthService:
                 current_a=current_a,
                 no_load_current_a=self.settings.flow_no_load_current_a,
                 nominal_current_a=self.settings.flow_nominal_current_a,
+                nominal_flow_nm3h=self.settings.flow_nominal_nm3h,
+            )
+        if q_perda_m3h is None:
+            q_perda_m3h = calculate_flow_loss_m3h(
+                qn_m3h=qn_m3h,
+                nominal_flow_nm3h=self.settings.flow_nominal_nm3h,
+            )
+        if q_utilizacao_pct is None:
+            q_utilizacao_pct = calculate_flow_utilization_pct(
+                qn_m3h=qn_m3h,
                 nominal_flow_nm3h=self.settings.flow_nominal_nm3h,
             )
         if qa_m3h is None:
@@ -588,6 +604,8 @@ class HealthService:
             nominal_current_a=self.settings.flow_nominal_current_a,
             nominal_flow_nm3h=self.settings.flow_nominal_nm3h,
             qn_m3h=qn_m3h,
+            q_perda_m3h=q_perda_m3h,
+            q_utilizacao_pct=q_utilizacao_pct,
             qa_m3h=qa_m3h,
             conditions=conditions,
         )

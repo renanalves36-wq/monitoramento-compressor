@@ -7,6 +7,8 @@ import unittest
 from app.services.flow_service import (
     calculate_current_to_normal_factor,
     calculate_dry_air_partial_pressure_kpa,
+    calculate_flow_loss_m3h,
+    calculate_flow_utilization_pct,
     calculate_qa_m3h,
     calculate_qn_m3h,
     calculate_vapor_partial_pressure_kpa,
@@ -33,7 +35,7 @@ class FlowServiceTest(unittest.TestCase):
         self.assertAlmostEqual(dry_air_pressure, 97.92021, places=5)
         self.assertAlmostEqual(factor, 0.87654, places=5)
 
-    def test_qn_and_qa_use_current_and_no_load_current(self) -> None:
+    def test_qn_is_limited_to_nominal_and_qa_is_suction_equivalent(self) -> None:
         qn_m3h = calculate_qn_m3h(
             current_a=180,
             no_load_current_a=0,
@@ -48,6 +50,14 @@ class FlowServiceTest(unittest.TestCase):
         self.assertAlmostEqual(qn_m3h or 0, 12000, places=5)
         self.assertAlmostEqual(qa_m3h or 0, 13689.57, places=2)
 
+        overloaded_qn = calculate_qn_m3h(
+            current_a=195,
+            no_load_current_a=0,
+            nominal_current_a=180,
+            nominal_flow_nm3h=12000,
+        )
+        self.assertEqual(overloaded_qn, 12000)
+
     def test_qn_is_clamped_to_zero_below_no_load_current(self) -> None:
         qn_m3h = calculate_qn_m3h(
             current_a=20,
@@ -57,6 +67,20 @@ class FlowServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(qn_m3h, 0.0)
+
+    def test_flow_loss_and_utilization_use_nominal_capacity(self) -> None:
+        loss = calculate_flow_loss_m3h(qn_m3h=9600, nominal_flow_nm3h=12000)
+        utilization = calculate_flow_utilization_pct(qn_m3h=9600, nominal_flow_nm3h=12000)
+        overloaded_loss = calculate_flow_loss_m3h(qn_m3h=13000, nominal_flow_nm3h=12000)
+        overloaded_utilization = calculate_flow_utilization_pct(
+            qn_m3h=13000,
+            nominal_flow_nm3h=12000,
+        )
+
+        self.assertEqual(loss, 2400)
+        self.assertEqual(utilization, 80)
+        self.assertEqual(overloaded_loss, 0)
+        self.assertEqual(overloaded_utilization, 100)
 
 
 if __name__ == "__main__":

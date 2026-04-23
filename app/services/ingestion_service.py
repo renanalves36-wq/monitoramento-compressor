@@ -434,7 +434,16 @@ class IngestionService:
                 qn = self.settings.flow_nominal_nm3h * (
                     (current - self.settings.flow_no_load_current_a) / denominator
                 )
-                frame["qn_m3h"] = qn.clip(lower=0)
+                frame["qn_m3h"] = qn.clip(
+                    lower=0,
+                    upper=self.settings.flow_nominal_nm3h,
+                )
+                frame["q_perda_m3h"] = (
+                    self.settings.flow_nominal_nm3h - frame["qn_m3h"]
+                ).clip(lower=0)
+                frame["q_utilizacao_pct"] = (
+                    frame["qn_m3h"] / self.settings.flow_nominal_nm3h
+                ) * 100.0
                 frame["qa_m3h"] = (
                     frame["qn_m3h"] / self.settings.flow_current_to_normal_factor
                 )
